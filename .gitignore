@@ -53,3 +53,8 @@ dist/
 outputs/
 models/
 checkpoints/
+
+# Temporary exclusions per user request
+README.md
+data/sample_users.json
+data/sample_questions.json
