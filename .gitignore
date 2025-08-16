@@ -58,3 +58,19 @@ checkpoints/
 README.md
 data/sample_users.json
 data/sample_questions.json
+
+# Learning materials and educational content
+src/learning/
+
+# Test and development files
+test_scenarios.json
+demo_plutus.py
+run_test.py
+github_setup_commands.sh
+
+# Wealthify and temporary files
+tmp_del/
+*wealthify*
+
+# Notes and documentation drafts
+NOTES.txt
