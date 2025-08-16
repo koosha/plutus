@@ -1,0 +1,764 @@
+{
+  "users": [
+    {
+      "user_id": "user_001",
+      "name": "Sarah Chen",
+      "email": "sarah.chen@email.com",
+      "age": 28,
+      "location": "San Francisco, CA",
+      "marital_status": "single",
+      "household_size": 1,
+      "employment_status": "employed",
+      "job_title": "Software Engineer",
+      "company": "Tech Startup",
+      "industry": "Technology",
+      "annual_income": 125000,
+      "monthly_income": 10417,
+      "monthly_expenses": 7500,
+      "risk_tolerance": "moderate",
+      "investment_experience": "intermediate",
+      
+      "accounts": [
+        {
+          "account_id": "acc_001_1",
+          "type": "checking",
+          "bank": "Chase",
+          "balance": 8500,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_001_2", 
+          "type": "savings",
+          "bank": "Ally Bank",
+          "balance": 25000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_001_3",
+          "type": "401k",
+          "provider": "Fidelity",
+          "balance": 45000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_001_4",
+          "type": "brokerage",
+          "provider": "Schwab",
+          "balance": 18000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_001_5",
+          "type": "credit_card",
+          "bank": "Chase Sapphire",
+          "balance": -2800,
+          "currency": "USD"
+        }
+      ],
+      
+      "goals": [
+        {
+          "goal_id": "goal_001_1",
+          "title": "Emergency Fund",
+          "description": "Build 6-month emergency fund",
+          "category": "emergency",
+          "target_amount": 45000,
+          "current_amount": 25000,
+          "target_date": "2025-12-31",
+          "priority": "high",
+          "status": "in_progress"
+        },
+        {
+          "goal_id": "goal_001_2",
+          "title": "House Down Payment",
+          "description": "Save for first home purchase",
+          "category": "home_purchase",
+          "target_amount": 120000,
+          "current_amount": 18000,
+          "target_date": "2027-06-01",
+          "priority": "high",
+          "status": "in_progress"
+        },
+        {
+          "goal_id": "goal_001_3",
+          "title": "Retirement",
+          "description": "Build retirement nest egg",
+          "category": "retirement",
+          "target_amount": 1000000,
+          "current_amount": 45000,
+          "target_date": "2059-01-01",
+          "priority": "medium",
+          "status": "in_progress"
+        }
+      ],
+      
+      "wealth_health": {
+        "overall_score": 72,
+        "component_scores": {
+          "goals": 75,
+          "cash_flow": 68,
+          "portfolio": 70,
+          "buffer": 76
+        },
+        "last_calculated": "2024-08-15T10:30:00Z",
+        "trend": "improving"
+      },
+      
+      "financial_behavior": {
+        "spending_personality": "balanced",
+        "decision_style": "analytical",
+        "financial_fears": ["market crashes", "job loss"],
+        "financial_motivations": ["homeownership", "financial independence"]
+      },
+      
+      "preferences": {
+        "communication_style": "detailed",
+        "follow_up_frequency": "balanced",
+        "preferred_contact_method": "app_notifications"
+      }
+    },
+    
+    {
+      "user_id": "user_002",
+      "name": "Michael Rodriguez",
+      "email": "michael.rodriguez@email.com",
+      "age": 35,
+      "location": "Austin, TX",
+      "marital_status": "married",
+      "household_size": 4,
+      "employment_status": "employed",
+      "job_title": "Marketing Director",
+      "company": "Consumer Goods Corp",
+      "industry": "Marketing",
+      "annual_income": 95000,
+      "monthly_income": 7917,
+      "monthly_expenses": 6800,
+      "risk_tolerance": "conservative",
+      "investment_experience": "beginner",
+      
+      "family_members": [
+        {
+          "name": "Lisa Rodriguez",
+          "relationship": "spouse",
+          "age": 33,
+          "employment_status": "part_time"
+        },
+        {
+          "name": "Emma Rodriguez", 
+          "relationship": "child",
+          "age": 8,
+          "dependent": true
+        },
+        {
+          "name": "Lucas Rodriguez",
+          "relationship": "child", 
+          "age": 5,
+          "dependent": true
+        }
+      ],
+      
+      "accounts": [
+        {
+          "account_id": "acc_002_1",
+          "type": "checking",
+          "bank": "Bank of America",
+          "balance": 3200,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_002_2",
+          "type": "savings", 
+          "bank": "Capital One",
+          "balance": 12000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_002_3",
+          "type": "401k",
+          "provider": "Vanguard",
+          "balance": 85000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_002_4",
+          "type": "529_plan",
+          "provider": "Fidelity",
+          "balance": 15000,
+          "currency": "USD",
+          "beneficiary": "Emma and Lucas"
+        },
+        {
+          "account_id": "acc_002_5",
+          "type": "mortgage",
+          "bank": "Wells Fargo", 
+          "balance": -285000,
+          "currency": "USD",
+          "property_value": 350000
+        },
+        {
+          "account_id": "acc_002_6",
+          "type": "credit_card",
+          "bank": "Citi",
+          "balance": -4500,
+          "currency": "USD"
+        }
+      ],
+      
+      "goals": [
+        {
+          "goal_id": "goal_002_1",
+          "title": "Pay Off Credit Card Debt",
+          "description": "Eliminate high-interest credit card debt",
+          "category": "debt_payoff",
+          "target_amount": 4500,
+          "current_amount": 0,
+          "target_date": "2025-03-31",
+          "priority": "high",
+          "status": "in_progress"
+        },
+        {
+          "goal_id": "goal_002_2", 
+          "title": "Children's College Fund",
+          "description": "Save for Emma and Lucas college education",
+          "category": "education",
+          "target_amount": 200000,
+          "current_amount": 15000,
+          "target_date": "2034-08-01",
+          "priority": "high",
+          "status": "in_progress"
+        },
+        {
+          "goal_id": "goal_002_3",
+          "title": "Family Vacation",
+          "description": "Disney World family vacation",
+          "category": "vacation",
+          "target_amount": 8000,
+          "current_amount": 2000,
+          "target_date": "2025-06-15",
+          "priority": "medium",
+          "status": "in_progress"
+        }
+      ],
+      
+      "wealth_health": {
+        "overall_score": 58,
+        "component_scores": {
+          "goals": 65,
+          "cash_flow": 55,
+          "portfolio": 60,
+          "buffer": 45
+        },
+        "last_calculated": "2024-08-15T10:30:00Z",
+        "trend": "stable"
+      },
+      
+      "financial_behavior": {
+        "spending_personality": "careful_spender",
+        "decision_style": "collaborative",
+        "financial_fears": ["not having enough for kids' education", "job instability"],
+        "financial_motivations": ["family security", "children's future"]
+      },
+      
+      "preferences": {
+        "communication_style": "concise",
+        "follow_up_frequency": "minimal",
+        "preferred_contact_method": "email"
+      }
+    },
+
+    {
+      "user_id": "user_003",
+      "name": "Jennifer Thompson",
+      "email": "jennifer.thompson@email.com",
+      "age": 45,
+      "location": "Denver, CO",
+      "marital_status": "divorced",
+      "household_size": 2,
+      "employment_status": "employed",
+      "job_title": "Senior Nurse Practitioner", 
+      "company": "Denver Medical Center",
+      "industry": "Healthcare",
+      "annual_income": 110000,
+      "monthly_income": 9167,
+      "monthly_expenses": 5800,
+      "risk_tolerance": "moderate",
+      "investment_experience": "advanced",
+      
+      "family_members": [
+        {
+          "name": "Alex Thompson",
+          "relationship": "child",
+          "age": 16,
+          "dependent": true
+        }
+      ],
+      
+      "accounts": [
+        {
+          "account_id": "acc_003_1",
+          "type": "checking",
+          "bank": "US Bank",
+          "balance": 6800,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_003_2",
+          "type": "savings",
+          "bank": "Marcus Goldman Sachs",
+          "balance": 45000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_003_3",
+          "type": "401k",
+          "provider": "TIAA",
+          "balance": 285000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_003_4",
+          "type": "roth_ira",
+          "provider": "Vanguard",
+          "balance": 95000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_003_5",
+          "type": "brokerage",
+          "provider": "E*TRADE",
+          "balance": 125000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_003_6",
+          "type": "529_plan",
+          "provider": "CollegeBound",
+          "balance": 85000,
+          "currency": "USD",
+          "beneficiary": "Alex"
+        },
+        {
+          "account_id": "acc_003_7",
+          "type": "mortgage",
+          "bank": "Quicken Loans",
+          "balance": -195000,
+          "currency": "USD",
+          "property_value": 420000
+        }
+      ],
+      
+      "goals": [
+        {
+          "goal_id": "goal_003_1",
+          "title": "Alex's College Fund",
+          "description": "Complete funding for Alex's college education",
+          "category": "education",
+          "target_amount": 120000,
+          "current_amount": 85000,
+          "target_date": "2026-08-01",
+          "priority": "high",
+          "status": "on_track"
+        },
+        {
+          "goal_id": "goal_003_2",
+          "title": "Early Retirement",
+          "description": "Retire at 60 with financial independence",
+          "category": "retirement",
+          "target_amount": 1500000,
+          "current_amount": 505000,
+          "target_date": "2039-01-01",
+          "priority": "high",
+          "status": "on_track"
+        },
+        {
+          "goal_id": "goal_003_3",
+          "title": "European Vacation",
+          "description": "Graduation trip to Europe with Alex",
+          "category": "vacation",
+          "target_amount": 12000,
+          "current_amount": 4000,
+          "target_date": "2026-06-01",
+          "priority": "medium",
+          "status": "in_progress"
+        }
+      ],
+      
+      "wealth_health": {
+        "overall_score": 85,
+        "component_scores": {
+          "goals": 88,
+          "cash_flow": 82,
+          "portfolio": 85,
+          "buffer": 85
+        },
+        "last_calculated": "2024-08-15T10:30:00Z",
+        "trend": "improving"
+      },
+      
+      "financial_behavior": {
+        "spending_personality": "strategic_saver",
+        "decision_style": "analytical",
+        "financial_fears": ["healthcare costs in retirement", "market downturns near retirement"],
+        "financial_motivations": ["financial independence", "leaving legacy for Alex"]
+      },
+      
+      "preferences": {
+        "communication_style": "detailed",
+        "follow_up_frequency": "detailed",
+        "preferred_contact_method": "app_notifications"
+      }
+    },
+
+    {
+      "user_id": "user_004",
+      "name": "David Park",
+      "email": "david.park@email.com",
+      "age": 26,
+      "location": "Chicago, IL",
+      "marital_status": "single",
+      "household_size": 1,
+      "employment_status": "employed",
+      "job_title": "Junior Analyst",
+      "company": "Financial Services Firm",
+      "industry": "Finance",
+      "annual_income": 65000,
+      "monthly_income": 5417,
+      "monthly_expenses": 4200,
+      "risk_tolerance": "aggressive",
+      "investment_experience": "intermediate",
+      
+      "accounts": [
+        {
+          "account_id": "acc_004_1",
+          "type": "checking",
+          "bank": "Chase",
+          "balance": 2100,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_004_2",
+          "type": "savings",
+          "bank": "Discover Bank",
+          "balance": 8500,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_004_3",
+          "type": "401k",
+          "provider": "Principal",
+          "balance": 12000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_004_4",
+          "type": "roth_ira",
+          "provider": "TD Ameritrade",
+          "balance": 15000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_004_5",
+          "type": "brokerage",
+          "provider": "Robinhood",
+          "balance": 8500,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_004_6",
+          "type": "student_loan",
+          "servicer": "Great Lakes",
+          "balance": -35000,
+          "currency": "USD",
+          "interest_rate": 0.055
+        },
+        {
+          "account_id": "acc_004_7",
+          "type": "credit_card",
+          "bank": "Capital One",
+          "balance": -1200,
+          "currency": "USD"
+        }
+      ],
+      
+      "goals": [
+        {
+          "goal_id": "goal_004_1",
+          "title": "Pay Off Student Loans",
+          "description": "Eliminate student loan debt",
+          "category": "debt_payoff",
+          "target_amount": 35000,
+          "current_amount": 0,
+          "target_date": "2029-05-01",
+          "priority": "high",
+          "status": "in_progress"
+        },
+        {
+          "goal_id": "goal_004_2",
+          "title": "Emergency Fund",
+          "description": "Build 6-month emergency fund",
+          "category": "emergency",
+          "target_amount": 25000,
+          "current_amount": 8500,
+          "target_date": "2026-12-31",
+          "priority": "high",
+          "status": "in_progress"
+        },
+        {
+          "goal_id": "goal_004_3",
+          "title": "Investment Growth",
+          "description": "Build investment portfolio for long-term wealth",
+          "category": "investment",
+          "target_amount": 100000,
+          "current_amount": 35500,
+          "target_date": "2030-01-01",
+          "priority": "medium",
+          "status": "in_progress"
+        }
+      ],
+      
+      "wealth_health": {
+        "overall_score": 48,
+        "component_scores": {
+          "goals": 55,
+          "cash_flow": 62,
+          "portfolio": 40,
+          "buffer": 35
+        },
+        "last_calculated": "2024-08-15T10:30:00Z",
+        "trend": "improving"
+      },
+      
+      "financial_behavior": {
+        "spending_personality": "optimistic_spender",
+        "decision_style": "intuitive",
+        "financial_fears": ["being stuck in debt forever", "missing investment opportunities"],
+        "financial_motivations": ["financial freedom", "early retirement", "wealth building"]
+      },
+      
+      "preferences": {
+        "communication_style": "concise",
+        "follow_up_frequency": "balanced",
+        "preferred_contact_method": "app_notifications"
+      }
+    },
+
+    {
+      "user_id": "user_005",
+      "name": "Robert Wilson",
+      "email": "robert.wilson@email.com",
+      "age": 58,
+      "location": "Seattle, WA",
+      "marital_status": "married",
+      "household_size": 2,
+      "employment_status": "employed",
+      "job_title": "Senior Vice President",
+      "company": "Tech Corporation",
+      "industry": "Technology",
+      "annual_income": 185000,
+      "monthly_income": 15417,
+      "monthly_expenses": 8500,
+      "risk_tolerance": "conservative",
+      "investment_experience": "advanced",
+      
+      "family_members": [
+        {
+          "name": "Margaret Wilson",
+          "relationship": "spouse",
+          "age": 55,
+          "employment_status": "retired"
+        }
+      ],
+      
+      "accounts": [
+        {
+          "account_id": "acc_005_1",
+          "type": "checking",
+          "bank": "Wells Fargo",
+          "balance": 15000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_005_2",
+          "type": "savings",
+          "bank": "Ally Bank",
+          "balance": 85000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_005_3",
+          "type": "401k",
+          "provider": "Fidelity",
+          "balance": 1250000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_005_4",
+          "type": "roth_ira",
+          "provider": "Vanguard",
+          "balance": 185000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_005_5",
+          "type": "traditional_ira",
+          "provider": "Schwab",
+          "balance": 225000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_005_6",
+          "type": "brokerage",
+          "provider": "Vanguard",
+          "balance": 425000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_005_7",
+          "type": "real_estate",
+          "description": "Primary Residence",
+          "balance": 750000,
+          "currency": "USD"
+        },
+        {
+          "account_id": "acc_005_8",
+          "type": "real_estate",
+          "description": "Vacation Home",
+          "balance": 450000,
+          "currency": "USD"
+        }
+      ],
+      
+      "goals": [
+        {
+          "goal_id": "goal_005_1",
+          "title": "Retirement at 62",
+          "description": "Full retirement with comfortable lifestyle",
+          "category": "retirement",
+          "target_amount": 3000000,
+          "current_amount": 2935000,
+          "target_date": "2028-01-01",
+          "priority": "high",
+          "status": "on_track"
+        },
+        {
+          "goal_id": "goal_005_2",
+          "title": "Estate Planning",
+          "description": "Optimize estate for tax efficiency and legacy",
+          "category": "estate",
+          "target_amount": 0,
+          "current_amount": 0,
+          "target_date": "2025-12-31",
+          "priority": "high",
+          "status": "planning"
+        },
+        {
+          "goal_id": "goal_005_3",
+          "title": "Charitable Giving",
+          "description": "Establish charitable giving strategy",
+          "category": "philanthropy",
+          "target_amount": 100000,
+          "current_amount": 25000,
+          "target_date": "2026-12-31",
+          "priority": "medium",
+          "status": "in_progress"
+        }
+      ],
+      
+      "wealth_health": {
+        "overall_score": 92,
+        "component_scores": {
+          "goals": 95,
+          "cash_flow": 90,
+          "portfolio": 92,
+          "buffer": 90
+        },
+        "last_calculated": "2024-08-15T10:30:00Z",
+        "trend": "stable"
+      },
+      
+      "financial_behavior": {
+        "spending_personality": "strategic_spender",
+        "decision_style": "analytical",
+        "financial_fears": ["market volatility near retirement", "healthcare costs", "tax implications"],
+        "financial_motivations": ["comfortable retirement", "legacy planning", "tax optimization"]
+      },
+      
+      "preferences": {
+        "communication_style": "detailed",
+        "follow_up_frequency": "minimal",
+        "preferred_contact_method": "email"
+      }
+    }
+  ],
+  
+  "wealth_health_methodology": {
+    "description": "Wealthify Wealth Health Score calculation methodology",
+    "components": {
+      "goals": {
+        "weight": 0.25,
+        "description": "Progress toward financial goals and goal achievability",
+        "factors": ["goal_progress", "goal_realism", "goal_prioritization", "timeline_feasibility"]
+      },
+      "cash_flow": {
+        "weight": 0.25,
+        "description": "Income stability and expense management",
+        "factors": ["savings_rate", "debt_to_income_ratio", "income_stability", "expense_optimization"]
+      },
+      "portfolio": {
+        "weight": 0.25,
+        "description": "Investment portfolio health and optimization",
+        "factors": ["diversification", "asset_allocation", "cost_efficiency", "risk_alignment"]
+      },
+      "buffer": {
+        "weight": 0.25,
+        "description": "Financial resilience and emergency preparedness",
+        "factors": ["emergency_fund_months", "insurance_coverage", "debt_levels", "liquidity"]
+      }
+    },
+    "score_ranges": {
+      "excellent": "85-100",
+      "good": "70-84", 
+      "fair": "50-69",
+      "needs_improvement": "30-49",
+      "critical": "0-29"
+    }
+  },
+  
+  "data_summary": {
+    "total_users": 5,
+    "age_range": "26-58",
+    "wealth_score_range": "48-92",
+    "user_profiles": [
+      {
+        "user": "Sarah Chen",
+        "profile": "Young tech professional, single, building wealth, moderate risk",
+        "wealth_score": 72,
+        "key_challenges": ["House down payment", "Emergency fund completion"]
+      },
+      {
+        "user": "Michael Rodriguez", 
+        "profile": "Family man, debt concerns, conservative approach, dual priorities",
+        "wealth_score": 58,
+        "key_challenges": ["Credit card debt", "Children's education", "Cash flow"]
+      },
+      {
+        "user": "Jennifer Thompson",
+        "profile": "Single parent, advanced investor, pre-retirement planning",
+        "wealth_score": 85,
+        "key_challenges": ["Final retirement push", "Child's college funding"]
+      },
+      {
+        "user": "David Park",
+        "profile": "Young professional, student debt, aggressive investor, building foundation",
+        "wealth_score": 48,
+        "key_challenges": ["Student loans", "Emergency fund", "Investment growth"]
+      },
+      {
+        "user": "Robert Wilson",
+        "profile": "High earner, near retirement, estate planning, tax optimization",
+        "wealth_score": 92,
+        "key_challenges": ["Retirement transition", "Estate planning", "Tax efficiency"]
+      }
+    ]
+  }
+}

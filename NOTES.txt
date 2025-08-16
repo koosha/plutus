@@ -1,0 +1,9 @@
+
+
+
+
+  1. Lesson 1: Basic agent concepts (the file I just created)
+  2. Lesson 2: Conditional routing and decision making
+  3. Lesson 3: Memory and context management
+  4. Lesson 4: Integration with real data sources
+  5. Lesson 5: Production deployment patterns
