@@ -200,49 +200,297 @@ class PlutusContextBuilder:
         return context
 ```
 
-## 🤖 LangGraph Agent Implementation
+## 🤖 LangGraph Multi-Agent System
 
-### Agent Workflow:
+### Phase 3: Advanced Agent Network
+
+Plutus implements a sophisticated multi-agent system using LangGraph that coordinates 5 specialized agents to provide comprehensive financial coaching.
+
+```mermaid
+graph TB
+    %% Entry Point
+    UserInput["👤 User Input"]
+    
+    %% Advanced Orchestrator
+    subgraph Orchestrator ["🎯 Advanced Orchestrator"]
+        RoutingAnalysis["📊 Routing Analysis"]
+        ExecutionStrategy["⚡ Execution Strategy"]
+    end
+    
+    %% Specialized Agents
+    subgraph FinAgent ["🏦 Financial Analysis Agent"]
+        FinAnalysis["💰 Financial Health Analysis"]
+        FinInsights["📈 Financial Insights"]
+    end
+    
+    subgraph GoalAgent ["🎯 Goal Extraction Agent"]
+        GoalDetection["🔍 Goal Detection"]
+        GoalTracking["📋 Goal Management"]
+    end
+    
+    subgraph RiskAgent ["⚠️ Risk Assessment Agent"]
+        RiskAnalysis["📊 Risk Profiling"]
+        RiskMitigation["🛡️ Risk Mitigation"]
+    end
+    
+    subgraph RecAgent ["💡 Recommendation Agent"]
+        RecommendationEngine["🎯 Personalized Advice"]
+        ActionPlans["📝 Action Plans"]
+    end
+    
+    %% Memory & Context System
+    subgraph Memory ["🧠 Memory Service"]
+        ConversationMemory["💬 Conversation History"]
+        UserInsights["💡 User Insights"]
+        ProgressTracking["📈 Progress Tracking"]
+    end
+    
+    %% External Services
+    subgraph External ["🔌 External Services"]
+        ClaudeAPI["🤖 Claude API"]
+        WealthifyData["🏦 Wealthify Data"]
+        MemoryDB["💾 Memory Database"]
+    end
+    
+    %% Response Synthesis
+    ResponseSynthesis["🔄 Response Synthesis"]
+    FinalResponse["📤 Final Response"]
+    
+    %% Flow Connections
+    UserInput --> RoutingAnalysis
+    RoutingAnalysis --> ExecutionStrategy
+    
+    %% Routing to Agents
+    ExecutionStrategy -.->|Financial Query| FinAnalysis
+    ExecutionStrategy -.->|Goal Discussion| GoalDetection
+    ExecutionStrategy -.->|Risk Inquiry| RiskAnalysis
+    ExecutionStrategy -.->|Advice Request| RecommendationEngine
+    
+    %% Agent Internal Flows
+    FinAnalysis --> FinInsights
+    GoalDetection --> GoalTracking
+    RiskAnalysis --> RiskMitigation
+    RecommendationEngine --> ActionPlans
+    
+    %% Memory Integration
+    FinInsights -.-> ConversationMemory
+    GoalTracking -.-> UserInsights
+    RiskMitigation -.-> ProgressTracking
+    ActionPlans -.-> ConversationMemory
+    
+    %% External Service Connections
+    FinAnalysis <--> ClaudeAPI
+    GoalDetection <--> ClaudeAPI
+    RiskAnalysis <--> ClaudeAPI
+    RecommendationEngine <--> ClaudeAPI
+    
+    FinAnalysis <--> WealthifyData
+    ConversationMemory <--> MemoryDB
+    UserInsights <--> MemoryDB
+    ProgressTracking <--> MemoryDB
+    
+    %% Response Generation
+    FinInsights --> ResponseSynthesis
+    GoalTracking --> ResponseSynthesis
+    RiskMitigation --> ResponseSynthesis
+    ActionPlans --> ResponseSynthesis
+    ConversationMemory --> ResponseSynthesis
+    
+    ResponseSynthesis --> FinalResponse
+    
+    %% Styling
+    classDef agentNode fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef memoryNode fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef externalNode fill:#e8f5e8,stroke:#2e7d32,stroke-width:2px
+    classDef orchestratorNode fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    classDef responseNode fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    
+    class FinAnalysis,FinInsights,GoalDetection,GoalTracking,RiskAnalysis,RiskMitigation,RecommendationEngine,ActionPlans agentNode
+    class ConversationMemory,UserInsights,ProgressTracking memoryNode
+    class ClaudeAPI,WealthifyData,MemoryDB externalNode
+    class RoutingAnalysis,ExecutionStrategy orchestratorNode
+    class ResponseSynthesis,FinalResponse responseNode
+```
+
+### Advanced Workflow Patterns
+
+#### 1. **Intelligent Routing System**
+
+```python
+class AdvancedOrchestrator:
+    def __init__(self):
+        self.routing_patterns = {
+            "financial_analysis": {
+                "keywords": ["financial health", "net worth", "portfolio", "balance"],
+                "agents": ["financial_analysis"],
+                "priority": "high"
+            },
+            "goal_planning": {
+                "keywords": ["goal", "save for", "planning", "target"],
+                "agents": ["goal_extraction", "recommendation"],
+                "priority": "high"
+            },
+            "comprehensive_analysis": {
+                "keywords": ["advice", "recommendation", "what should", "help me"],
+                "agents": ["financial_analysis", "goal_extraction", "risk_assessment", "recommendation"],
+                "priority": "medium"
+            }
+        }
+    
+    async def analyze_conversation_routing(self, user_message: str) -> Dict[str, Any]:
+        # Intelligent agent selection based on conversation analysis
+        # Returns optimal agent combination and execution strategy
+        pass
+```
+
+#### 2. **Parallel Agent Execution**
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Orchestrator
+    participant FinAgent as Financial Agent
+    participant GoalAgent as Goal Agent
+    participant RiskAgent as Risk Agent
+    participant RecAgent as Recommendation Agent
+    participant Memory as Memory Service
+    
+    User->>Orchestrator: "Help me optimize my finances"
+    Orchestrator->>Orchestrator: Analyze routing needs
+    
+    par Parallel Agent Execution
+        Orchestrator->>FinAgent: Analyze financial health
+        Orchestrator->>GoalAgent: Extract any goals mentioned
+        Orchestrator->>RiskAgent: Assess risk profile
+    end
+    
+    FinAgent-->>Orchestrator: Financial analysis results
+    GoalAgent-->>Orchestrator: Goal extraction results
+    RiskAgent-->>Orchestrator: Risk assessment results
+    
+    Orchestrator->>RecAgent: Generate recommendations (with all context)
+    RecAgent-->>Orchestrator: Personalized recommendations
+    
+    Orchestrator->>Memory: Store conversation & insights
+    Orchestrator->>User: Synthesized comprehensive response
+```
+
+#### 3. **LangGraph State Management**
 
 ```python
 from langgraph.graph import StateGraph, END
-from langchain_anthropic import ChatAnthropic
+from langgraph.checkpoint.sqlite import SqliteSaver
 
-class PlutusAgentWorkflow:
-    def __init__(self):
-        self.llm = ChatAnthropic(model="claude-3-opus-20240229")
-        self.workflow = self.build_workflow()
-    
-    def build_workflow(self):
+class PlutusWorkflow:
+    def build_advanced_workflow(self):
         workflow = StateGraph(ConversationState)
         
-        # Add nodes
-        workflow.add_node("conversation", self.conversation_agent)
-        workflow.add_node("financial_analysis", self.financial_analysis_agent)
-        workflow.add_node("goal_extraction", self.goal_extraction_agent)
-        workflow.add_node("recommendation", self.recommendation_agent)
-        workflow.add_node("context_update", self.context_update_agent)
+        # Orchestration nodes
+        workflow.add_node("analyze_routing", self.analyze_routing_node)
+        workflow.add_node("coordinate_agents", self.coordinate_agents_node)
         
-        # Add edges
-        workflow.set_entry_point("conversation")
+        # Specialized agent nodes
+        workflow.add_node("financial_analysis", self.financial_analysis_node)
+        workflow.add_node("goal_extraction", self.goal_extraction_node)
+        workflow.add_node("risk_assessment", self.risk_assessment_node)
+        workflow.add_node("generate_recommendations", self.recommendation_node)
+        
+        # Memory and synthesis nodes
+        workflow.add_node("update_memory", self.memory_update_node)
+        workflow.add_node("synthesize_response", self.synthesis_node)
+        
+        # Dynamic routing logic
+        workflow.set_entry_point("analyze_routing")
         workflow.add_conditional_edges(
-            "conversation",
+            "analyze_routing",
             self.route_conversation,
             {
-                "analyze_finances": "financial_analysis",
-                "discuss_goals": "goal_extraction",
-                "get_advice": "recommendation",
+                "financial_only": "financial_analysis",
+                "goal_focused": "goal_extraction",
+                "risk_focused": "risk_assessment",
+                "comprehensive": "coordinate_agents",
                 "end": END
             }
         )
         
-        workflow.add_edge("financial_analysis", "context_update")
-        workflow.add_edge("goal_extraction", "context_update")
-        workflow.add_edge("recommendation", "context_update")
-        workflow.add_edge("context_update", END)
+        # Parallel execution paths
+        workflow.add_edge("coordinate_agents", "financial_analysis")
+        workflow.add_edge("coordinate_agents", "goal_extraction")
+        workflow.add_edge("coordinate_agents", "risk_assessment")
         
-        return workflow.compile()
+        # Convergence and synthesis
+        workflow.add_edge("financial_analysis", "generate_recommendations")
+        workflow.add_edge("goal_extraction", "generate_recommendations")
+        workflow.add_edge("risk_assessment", "generate_recommendations")
+        workflow.add_edge("generate_recommendations", "update_memory")
+        workflow.add_edge("update_memory", "synthesize_response")
+        workflow.add_edge("synthesize_response", END)
+        
+        # Add persistent memory
+        memory = SqliteSaver.from_conn_string(":memory:")
+        return workflow.compile(checkpointer=memory)
 ```
+
+### Agent Specialization Matrix
+
+| Agent Type | Core Capabilities | Input Analysis | Output Generation | Claude Integration |
+|------------|------------------|----------------|-------------------|-------------------|
+| **Financial Analysis** | Net worth, cash flow, wealth scoring | Account data, transactions | Financial health assessment | Market analysis, trend interpretation |
+| **Goal Extraction** | NLP goal detection, categorization | Natural language, context | Structured goal data | Goal validation, timeline suggestions |
+| **Risk Assessment** | Multi-dimensional risk analysis | Portfolio, employment, debt | Risk score, mitigation strategies | Risk explanation, strategy refinement |
+| **Recommendation** | Personalized advice generation | Complete financial picture | Actionable recommendations | Strategy optimization, rationale |
+| **Memory Service** | Context persistence, learning | Conversation history, patterns | Insights, preferences | Pattern recognition, trend analysis |
+
+### Conversation Flow Examples
+
+#### Example 1: Goal-Focused Conversation
+```
+User: "I want to save $60,000 for a house down payment in 4 years"
+
+🎯 Routing Decision: goal_planning
+📋 Agents Activated: [goal_extraction, recommendation]
+
+Goal Agent: Extracts house purchase goal ($60k, 4 years)
+Recommendation Agent: Creates savings strategy ($1,250/month)
+
+💡 Final Response: "I've noted your house purchase goal. To save $60,000 in 4 years, 
+you'll need to save $1,250/month. Based on your current cash flow, I recommend..."
+```
+
+#### Example 2: Comprehensive Analysis
+```
+User: "What should I do with my finances?"
+
+🎯 Routing Decision: comprehensive_analysis  
+📋 Agents Activated: [financial_analysis, goal_extraction, risk_assessment, recommendation]
+
+Financial Agent: Analyzes current financial health (Wealth Score: 78/100)
+Goal Agent: Reviews existing goals and suggests new ones
+Risk Agent: Assesses overall risk profile (Medium risk, 45/100)
+Recommendation Agent: Synthesizes insights into actionable advice
+
+💡 Final Response: "Your financial health is strong with a wealth score of 78/100. 
+Your main areas for optimization are emergency fund building and tax-advantaged investing..."
+```
+
+### Performance Optimizations
+
+#### 1. **Parallel Processing Architecture**
+- Agents execute simultaneously when possible
+- Shared context passed efficiently between agents
+- Results aggregated without blocking
+
+#### 2. **Memory-Driven Efficiency**
+- Previous insights cached and reused
+- Conversation context maintained across sessions
+- Learning patterns reduce redundant analysis
+
+#### 3. **Adaptive Complexity**
+- Simple queries use fewer agents
+- Complex queries leverage full agent network
+- Processing scales with conversation complexity
+
+This advanced multi-agent architecture enables Plutus to provide sophisticated, personalized financial coaching that adapts to each user's unique situation and needs.
 
 ## 🔄 Integration Points with Wealthify
 
