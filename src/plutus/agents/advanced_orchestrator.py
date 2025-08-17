@@ -52,10 +52,8 @@ class AdvancedOrchestrator(BaseAgent):
     """
     
     def __init__(self):
-        super().__init__()
-        self.agent_name = "Advanced Orchestrator"
+        super().__init__("Advanced Orchestrator")
         self.agent_type = "advanced_orchestrator"
-        self.config = get_config()
         
         # Initialize specialized agents
         self.financial_agent = FinancialAnalysisAgent()
@@ -104,6 +102,17 @@ class AdvancedOrchestrator(BaseAgent):
         self.workflow = None
         if LANGGRAPH_AVAILABLE:
             self.workflow = self._build_langgraph_workflow()
+    
+    async def _process_core_logic(self, state: ConversationState) -> Dict[str, Any]:
+        """
+        Orchestrator uses process_message instead of the standard process flow.
+        This method delegates to process_message for consistency.
+        """
+        user_message = state.get("user_message", "")
+        user_id = state.get("user_id", "unknown")
+        session_id = state.get("session_id")
+        
+        return await self.process_message(user_message, user_id, session_id)
     
     async def process_message(
         self, 

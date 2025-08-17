@@ -38,10 +38,8 @@ class RiskAssessmentAgent(BaseAgent):
     """
     
     def __init__(self):
-        super().__init__()
-        self.agent_name = "Risk Assessment Agent"
+        super().__init__("Risk Assessment Agent")
         self.agent_type = "risk_assessment"
-        self.config = get_config()
         
         # Risk assessment frameworks
         self.risk_categories = {
@@ -102,7 +100,7 @@ class RiskAssessmentAgent(BaseAgent):
             "manufacturing": {"risk_level": "medium", "volatility": 0.4}
         }
     
-    async def process(self, state: ConversationState) -> Dict[str, Any]:
+    async def _process_core_logic(self, state: ConversationState) -> Dict[str, Any]:
         """
         Perform comprehensive risk assessment of user's financial situation.
         

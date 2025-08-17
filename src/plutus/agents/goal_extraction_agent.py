@@ -21,13 +21,13 @@ import json
 import re
 
 from .base_agent import BaseAgent
-from ..models.state import ConversationState, UserContext
-from ..core.config import get_config
+from .mixins import TextParsingMixin, ResponseFormattingMixin, ClaudePromptMixin
+from ..models.state import ConversationState
 
 logger = logging.getLogger(__name__)
 
 
-class GoalExtractionAgent(BaseAgent):
+class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin, ClaudePromptMixin):
     """
     Advanced agent for extracting and managing financial goals from conversations.
     
@@ -36,10 +36,8 @@ class GoalExtractionAgent(BaseAgent):
     """
     
     def __init__(self):
-        super().__init__()
-        self.agent_name = "Goal Extraction Agent"
+        super().__init__("Goal Extraction Agent")
         self.agent_type = "goal_extraction"
-        self.config = get_config()
         
         # Goal types and their characteristics
         self.goal_types = {
@@ -105,7 +103,7 @@ class GoalExtractionAgent(BaseAgent):
             "car_purchase": ["car", "vehicle", "auto", "truck", "motorcycle", "transportation"]
         }
     
-    async def process(self, state: ConversationState) -> Dict[str, Any]:
+    async def _process_core_logic(self, state: ConversationState) -> Dict[str, Any]:
         """
         Extract and analyze goals from the conversation state.
         

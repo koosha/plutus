@@ -10,9 +10,10 @@ import json
 from typing import Dict, List, Any, Optional
 
 from .base_agent import BaseAgent
-from ..models.state import ConversationState, AgentResult
+from .mixins import FinancialCalculationMixin, ResponseFormattingMixin, ClaudePromptMixin
+from ..models.state import ConversationState
 
-class FinancialAnalysisAgent(BaseAgent):
+class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseFormattingMixin, ClaudePromptMixin):
     """
     Financial Analysis Agent
     
@@ -25,9 +26,10 @@ class FinancialAnalysisAgent(BaseAgent):
     """
     
     def __init__(self):
-        super().__init__("financial_analysis_agent")
+        super().__init__("Financial Analysis Agent")
+        self.agent_type = "financial_analysis"
     
-    async def _execute_core_logic(self, state: ConversationState) -> AgentResult:
+    async def _process_core_logic(self, state: ConversationState) -> Dict[str, Any]:
         """Execute financial analysis"""
         
         # Get user context
@@ -43,15 +45,18 @@ class FinancialAnalysisAgent(BaseAgent):
         # Calculate confidence based on data availability
         confidence = self._calculate_confidence(user_context)
         
-        return AgentResult(
-            agent_name=self.agent_name,
-            success=True,
-            execution_time=0,  # Set by base class
-            analysis=analysis,
-            recommendations=recommendations,
-            confidence_score=confidence,
-            insights=analysis.get("key_insights", [])
+        # Create structured response
+        response = self.create_structured_response(
+            analysis, recommendations, confidence, self.agent_type
         )
+        
+        return {
+            "analysis": analysis,
+            "recommendations": recommendations,
+            "confidence_score": confidence,
+            "response": response,
+            "insights": analysis.get("key_insights", [])
+        }
     
     async def _analyze_financial_health(self, user_context: Dict[str, Any]) -> Dict[str, Any]:
         """

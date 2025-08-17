@@ -36,10 +36,8 @@ class RecommendationAgent(BaseAgent):
     """
     
     def __init__(self):
-        super().__init__()
-        self.agent_name = "Recommendation Agent"
+        super().__init__("Recommendation Agent")
         self.agent_type = "recommendation"
-        self.config = get_config()
         
         # Investment allocation models by risk tolerance
         self.allocation_models = {
@@ -87,7 +85,7 @@ class RecommendationAgent(BaseAgent):
             "high_risk_job": {"months": 9, "description": "9 months for high-risk employment"}
         }
     
-    async def process(self, state: ConversationState) -> Dict[str, Any]:
+    async def _process_core_logic(self, state: ConversationState) -> Dict[str, Any]:
         """
         Generate personalized financial recommendations based on user context.
         

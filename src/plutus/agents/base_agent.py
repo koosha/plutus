@@ -37,10 +37,10 @@ class BaseAgent(ABC):
     - Logging and observability
     """
     
-    def __init__(self, agent_name: str):
-        self.agent_name = agent_name
+    def __init__(self, agent_name: str = None):
+        self.agent_name = agent_name or self.__class__.__name__
         self.config = get_config()
-        self.logger = logging.getLogger(f"plutus.agents.{agent_name}")
+        self.logger = logging.getLogger(f"plutus.agents.{self.agent_name.replace(' ', '_').lower()}")
         
         # Initialize Claude client if available
         self.claude_client = None
@@ -55,7 +55,7 @@ class BaseAgent(ABC):
         self.total_api_cost = 0.0
         self.total_execution_time = 0.0
     
-    async def execute(self, state: ConversationState) -> AgentResult:
+    async def process(self, state: ConversationState) -> Dict[str, Any]:
         """
         Main execution method for the agent
         
@@ -69,20 +69,22 @@ class BaseAgent(ABC):
         
         try:
             # Execute agent-specific logic
-            result = await self._execute_core_logic(state)
+            result = await self._process_core_logic(state)
             
             # Calculate execution time
             execution_time = time.time() - start_time
             self.total_execution_time += execution_time
             
             # Update result metadata
-            result.agent_name = self.agent_name
-            result.execution_time = execution_time
-            result.success = True
+            result.update({
+                "agent_name": self.agent_name,
+                "agent_type": getattr(self, 'agent_type', 'unknown'),
+                "execution_time": execution_time,
+                "success": True
+            })
             
             self.logger.info(
-                f"{self.agent_name}: Completed in {execution_time:.2f}s "
-                f"(cost: ${result.api_cost:.4f})"
+                f"{self.agent_name}: Completed in {execution_time:.2f}s"
             )
             
             return result
@@ -94,16 +96,17 @@ class BaseAgent(ABC):
             self.logger.error(f"{self.agent_name}: Failed after {execution_time:.2f}s - {str(e)}")
             
             # Return error result
-            return AgentResult(
-                agent_name=self.agent_name,
-                success=False,
-                execution_time=execution_time,
-                error_message=str(e),
-                confidence_score=0.0
-            )
+            return {
+                "agent_name": self.agent_name,
+                "agent_type": getattr(self, 'agent_type', 'unknown'),
+                "success": False,
+                "execution_time": execution_time,
+                "error": str(e),
+                "response": f"I encountered an error while processing your request: {str(e)}"
+            }
     
     @abstractmethod
-    async def _execute_core_logic(self, state: ConversationState) -> AgentResult:
+    async def _process_core_logic(self, state: ConversationState) -> Dict[str, Any]:
         """
         Abstract method for agent-specific logic
         
