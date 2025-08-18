@@ -11,6 +11,19 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from pathlib import Path
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Find .env file in project root
+    env_path = Path(__file__).parent.parent.parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        print(f"✅ Loaded environment from {env_path}")
+    else:
+        print(f"⚠️ No .env file found at {env_path}")
+except ImportError:
+    print("⚠️ python-dotenv not installed - environment variables from system only")
+
 @dataclass
 class PlutusConfig:
     """
@@ -50,9 +63,9 @@ class PlutusConfig:
     enable_metrics: bool = True
     enable_tracing: bool = False
     
-    # Data Sources
-    sample_users_path: str = "data/sample_users.json"
-    sample_questions_path: str = "data/sample_questions.json"
+    # Integration Settings
+    integration_mode: bool = True  # True when running inside Wealthify
+    standalone_mode: bool = False  # True when running as standalone service
     
     # Security
     enable_pii_scrubbing: bool = True
@@ -66,6 +79,10 @@ class PlutusConfig:
         self.database_url = os.getenv("DATABASE_URL", self.database_url)
         self.redis_url = os.getenv("REDIS_URL", self.redis_url)
         
+        # Integration mode detection
+        self.integration_mode = os.getenv("PLUTUS_INTEGRATION_MODE", "true").lower() == "true"
+        self.standalone_mode = not self.integration_mode
+        
         # Validate required settings
         self.validate()
     
@@ -74,17 +91,20 @@ class PlutusConfig:
         
         if not self.anthropic_api_key:
             print("⚠️  ANTHROPIC_API_KEY not found - will run in simulation mode")
+            print("   Add ANTHROPIC_API_KEY to environment variables for AI-powered responses")
         
-        # Ensure data paths exist
-        project_root = Path(__file__).parent.parent.parent.parent
-        self.sample_users_path = str(project_root / self.sample_users_path)
-        self.sample_questions_path = str(project_root / self.sample_questions_path)
-        
-        if not Path(self.sample_users_path).exists():
-            raise FileNotFoundError(f"Sample users file not found: {self.sample_users_path}")
-        
-        if not Path(self.sample_questions_path).exists():
-            raise FileNotFoundError(f"Sample questions file not found: {self.sample_questions_path}")
+        # Skip file validation in integration mode (files not needed when integrated)
+        if self.standalone_mode:
+            # Only validate sample files when running standalone
+            project_root = Path(__file__).parent.parent.parent.parent
+            sample_users_path = str(project_root / "data/sample_users.json")
+            sample_questions_path = str(project_root / "data/sample_questions.json")
+            
+            if not Path(sample_users_path).exists():
+                print(f"⚠️  Sample users file not found: {sample_users_path}")
+            
+            if not Path(sample_questions_path).exists():
+                print(f"⚠️  Sample questions file not found: {sample_questions_path}")
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary"""
@@ -97,6 +117,8 @@ class PlutusConfig:
             "max_parallel_agents": self.max_parallel_agents,
             "agent_timeout_seconds": self.agent_timeout_seconds,
             "daily_cost_limit": self.daily_cost_limit,
+            "integration_mode": self.integration_mode,
+            "standalone_mode": self.standalone_mode,
             "enable_logging": self.enable_logging,
             "log_level": self.log_level
         }
