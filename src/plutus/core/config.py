@@ -67,6 +67,10 @@ class PlutusConfig:
     integration_mode: bool = True  # True when running inside Wealthify
     standalone_mode: bool = False  # True when running as standalone service
     
+    # Test Data Paths (for standalone testing)
+    sample_users_path: str = "data/sample_users.json"
+    sample_questions_path: str = "data/sample_questions.json"
+    
     # Security
     enable_pii_scrubbing: bool = True
     encrypt_sensitive_data: bool = True

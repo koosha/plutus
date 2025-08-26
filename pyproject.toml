@@ -1,8 +1,54 @@
 [project]
 name = "plutus"
-version = "0.1.0"
-description = "Multiagent wealth building coach brain using LangGraph and Claude API"
+version = "1.0.0"
+description = "AI-powered wealth management brain for financial advisory applications"
+authors = [{name = "Wealthify Team", email = "team@wealthify.com"}]
+license = {text = "MIT"}
+readme = "README.md"
 requires-python = ">=3.9"
+keywords = ["ai", "finance", "wealth-management", "claude", "anthropic"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Topic :: Office/Business :: Financial",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "anthropic>=0.60.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.27.0",
+    "tenacity>=9.0.0",
+    "pydantic>=2.0.0",
+    "typing-extensions>=4.8.0",
+]
+
+[project.optional-dependencies]
+langgraph = [
+    "langgraph>=0.2.0",
+    "langchain-anthropic>=0.2.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "black>=24.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/wealthify/plutus"
+Repository = "https://github.com/wealthify/plutus.git"
+Documentation = "https://github.com/wealthify/plutus#readme"
+Issues = "https://github.com/wealthify/plutus/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.black]
 line-length = 88

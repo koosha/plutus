@@ -157,15 +157,12 @@ $RECYCLE.BIN/
 
 # 🗂️ PROJECT SPECIFIC - PLUTUS
 # ==============================================================================
-# Documentation (keep only main README.md in git)
-docs/
-
-# Legacy files that may be recreated
+# Legacy files (replaced by modern structure)
 requirements.txt
 setup.py
 setup.cfg
 
-# Legacy test and demo files that may be recreated
+# Legacy test and demo files
 demo_*.py
 test_scenarios.*
 quick_test_*.py
@@ -173,8 +170,6 @@ run_test.py
 validate_imports.py
 extended_demo_responses.py
 github_setup_commands.sh
-test_*.py
-!test_plutus.py
 
 # Legacy orchestrator (use advanced_orchestrator.py instead)
 src/plutus/agents/orchestrator.py
@@ -184,13 +179,6 @@ src/learning/
 docs/learning/
 tutorials/
 examples/legacy/
-
-# Any documentation files (keep only README.md)
-*ARCHITECTURE*.md
-*INTEGRATION*.md
-*REFACTORING*.md
-*WEALTHIFY*.md
-*TEST_STRATEGY*.md
 
 # Temporary development files
 tmp/
@@ -300,10 +288,11 @@ drafts/
 # KEEP THESE FILES (DO NOT IGNORE)
 # ==============================================================================
 # These files SHOULD be committed to public repo:
-# - README.md (main documentation - high level only)
 # - pyproject.toml (package configuration)
 # - uv.lock (dependency lock file for reproducible builds) 
 # - src/plutus/ (main source code)
 # - data/sample_*.json (small sample data files)
 # - test_plutus.py (main test runner)
+# - README.md (documentation)
 # - .gitignore (this file)
+# - LICENSE (if applicable)

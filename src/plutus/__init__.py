@@ -16,14 +16,19 @@ Core Components:
 __version__ = "1.0.0"
 __author__ = "Wealthify Team"
 
-from .core.config import PlutusConfig
-from .agents.orchestrator import PlutusOrchestrator  
+from .core.config import PlutusConfig, set_config
+from .agents.advanced_orchestrator import AdvancedOrchestrator  
 from .models.state import ConversationState
 from .services.context_service import ContextService
 
+# Main orchestrator class - use AdvancedOrchestrator as default
+PlutusOrchestrator = AdvancedOrchestrator
+
 __all__ = [
     "PlutusConfig",
-    "PlutusOrchestrator", 
+    "PlutusOrchestrator",
+    "AdvancedOrchestrator", 
     "ConversationState",
-    "ContextService"
+    "ContextService",
+    "set_config"
 ]
