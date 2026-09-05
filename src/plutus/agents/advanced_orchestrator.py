@@ -38,11 +38,38 @@ from .financial_analysis_agent import FinancialAnalysisAgent
 from .goal_extraction_agent import GoalExtractionAgent
 from .recommendation_agent import RecommendationAgent
 from .risk_assessment_agent import RiskAssessmentAgent
-from ..models.state import ConversationState, UserContext
+from dataclasses import asdict
+
+from ..llm import (
+    LLMError,
+    LLMNotConfiguredError,
+    LLMProvider,
+    LLMResponseError,
+    OpenAIProvider,
+)
+from ..models.state import AgentResult, ConversationState, UserContext
 from ..services.context_service import get_context_service
 from ..core.config import get_config
 
 logger = logging.getLogger(__name__)
+
+# Educational-scope guardrails + output contract for the synthesis call.
+# Every real completion goes through this system prompt.
+ADVISOR_SYSTEM_PROMPT = """You are Plutus, the AI financial guide inside the Wealthify app.
+
+Strict scope and safety rules:
+- Provide educational, general financial information grounded ONLY in the user data supplied in the request. Do not invent numbers that are not present; say plainly when data is missing.
+- Do NOT give individualized investment advice: never recommend buying, selling, or holding any specific security, fund, or asset. Discuss categories, trade-offs, and widely accepted principles instead.
+- Never claim to execute trades, move money, open or close accounts, or take any action. You cannot take actions.
+- For decisions with tax, legal, or large financial consequences, remind the user to consult a licensed professional.
+- Keep a supportive, plain-language tone; be concise.
+
+Output contract — respond with a single JSON object and nothing else (no markdown fences):
+{"response": string, "insights": [string, ...], "recommendations": [string, ...], "confidence": number}
+- "response": the reply shown to the user (plain text, may use simple bullet lines).
+- "insights": up to 5 short observations grounded in the data (may be empty).
+- "recommendations": up to 5 short educational next steps (may be empty).
+- "confidence": 0..1, your confidence given the data completeness."""
 
 
 class AdvancedOrchestrator(BaseAgent):
@@ -51,11 +78,25 @@ class AdvancedOrchestrator(BaseAgent):
     using LangGraph for sophisticated conversation workflows.
     """
     
-    def __init__(self):
-        super().__init__("Advanced Orchestrator")
+    def __init__(self, provider: Optional[LLMProvider] = None):
+        # Resolve the LLM provider: explicit injection wins (tests, custom
+        # vendors); otherwise build the production provider from the
+        # environment. An unconfigured environment leaves the provider as
+        # None and process_message returns a typed error response.
+        if provider is None:
+            try:
+                provider = OpenAIProvider()
+            except LLMNotConfiguredError:
+                logger.info(
+                    "No LLM provider configured (OPENAI_API_KEY absent) — "
+                    "orchestrator will return llm_not_configured errors"
+                )
+                provider = None
+
+        super().__init__("Advanced Orchestrator", provider=provider)
         self.agent_type = "advanced_orchestrator"
-        
-        # Initialize specialized agents
+
+        # Initialize specialized agents (deterministic analyses)
         self.financial_agent = FinancialAnalysisAgent()
         self.goal_agent = GoalExtractionAgent()
         self.recommendation_agent = RecommendationAgent()
@@ -115,68 +156,102 @@ class AdvancedOrchestrator(BaseAgent):
         return await self.process_message(user_message, user_id, session_id)
     
     async def process_message(
-        self, 
-        user_message: str, 
-        user_id: str, 
-        session_id: Optional[str] = None
+        self,
+        user_message: str,
+        user_id: str,
+        session_id: Optional[str] = None,
+        user_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Process user message through advanced multi-agent workflow.
-        
+
         Args:
             user_message: User's input message
             user_id: User identifier
             session_id: Optional session identifier for conversation continuity
-            
+            user_context: Integration-supplied financial context (e.g. built
+                by the host app from its live database). When provided it is
+                used verbatim and the internal context service is bypassed.
+
         Returns:
             Comprehensive response from coordinated agents
         """
         
         try:
-            logger.info(f"🎯 Advanced Orchestrator processing message for user {user_id}")
-            
+            logger.info(f"Advanced Orchestrator processing message for user {user_id}")
+
             start_time = datetime.utcnow()
-            
+
+            # 0. Typed refusal when no provider is configured. Plutus does
+            # not fabricate advice: without a real LLM the caller gets a
+            # machine-readable error and decides how to degrade.
+            if self.llm is None:
+                return self._create_error_response(
+                    "LLM provider is not configured (set OPENAI_API_KEY)",
+                    error_type="llm_not_configured",
+                )
+
             # 1. Build conversation state
-            state = await self._build_conversation_state(user_message, user_id, session_id)
-            
+            state = await self._build_conversation_state(
+                user_message, user_id, session_id, user_context
+            )
+
             # 2. Analyze conversation and determine agent routing
             routing_analysis = await self._analyze_conversation_routing(user_message, state)
-            
-            # 3. Execute appropriate workflow
+
+            # 3. Execute appropriate workflow (deterministic specialist analyses)
             if self.workflow and LANGGRAPH_AVAILABLE:
                 result = await self._execute_langgraph_workflow(state, routing_analysis)
             else:
                 result = await self._execute_fallback_workflow(state, routing_analysis)
-            
-            # 4. Calculate processing time
+
+            # 4. Real LLM synthesis: compose the financial context and the
+            # specialist findings into one completion that produces the
+            # user-facing response (validated into AgentResult).
+            result = await self._synthesize_with_llm(state, result)
+
+            # 5. Calculate processing time
             processing_time = (datetime.utcnow() - start_time).total_seconds()
             result["metadata"]["processing_time"] = processing_time
-            
-            logger.info(f"✅ Advanced Orchestrator completed in {processing_time:.2f}s")
+
+            logger.info(f"Advanced Orchestrator completed in {processing_time:.2f}s")
             return result
-            
+
+        except LLMNotConfiguredError as e:
+            logger.warning(f"Advanced Orchestrator: LLM not configured: {e}")
+            return self._create_error_response(str(e), error_type="llm_not_configured")
+        except LLMError as e:
+            logger.error(f"Advanced Orchestrator: LLM call failed: {e}")
+            return self._create_error_response(str(e), error_type="llm_error")
         except Exception as e:
-            logger.error(f"❌ Advanced Orchestrator error: {e}")
+            logger.error(f"Advanced Orchestrator error: {e}")
             return self._create_error_response(f"Advanced orchestration failed: {str(e)}")
     
     async def _build_conversation_state(
-        self, 
-        user_message: str, 
-        user_id: str, 
-        session_id: Optional[str]
+        self,
+        user_message: str,
+        user_id: str,
+        session_id: Optional[str],
+        user_context: Optional[Dict[str, Any]] = None,
     ) -> ConversationState:
-        """Build comprehensive conversation state"""
-        
-        # Get user context
-        user_context = await self.context_service.get_user_context(user_id)
-        
+        """Build comprehensive conversation state.
+
+        An integration-supplied `user_context` wins; otherwise the internal
+        context service builds one (standalone mode).
+        """
+
+        if user_context is None:
+            built = await self.context_service.get_user_context(user_id)
+            user_context = (
+                built.to_dict() if hasattr(built, "to_dict") else built
+            )
+
         # Build conversation state
         state: ConversationState = {
             "user_message": user_message,
             "user_id": user_id,
             "session_id": session_id or f"session_{user_id}_{datetime.utcnow().timestamp()}",
-            "user_context": user_context.to_dict() if hasattr(user_context, 'to_dict') else user_context,
+            "user_context": user_context,
             "agent_results": [],
             "conversation_history": [],
             "metadata": {
@@ -401,9 +476,134 @@ class AdvancedOrchestrator(BaseAgent):
             logger.error(f"❌ Fallback workflow execution failed: {e}")
             return self._create_error_response(f"Workflow execution failed: {str(e)}")
     
+    async def _synthesize_with_llm(
+        self,
+        state: ConversationState,
+        workflow_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Produce the user-facing answer with ONE real LLM completion.
+
+        The specialists' deterministic analyses plus the user's financial
+        context become the user prompt; ADVISOR_SYSTEM_PROMPT carries the
+        educational-scope guardrails and the JSON output contract. The
+        completion is parsed and validated into an AgentResult that is
+        appended to agent_results, and its "response" replaces the template
+        synthesis.
+
+        Raises:
+            LLMNotConfiguredError / LLMResponseError: bubbled to
+            process_message, which maps them to typed error responses.
+        """
+
+        prompt = self._compose_synthesis_prompt(state, workflow_result)
+
+        call_started = datetime.utcnow()
+        completion = await self.call_llm(
+            prompt, system_prompt=ADVISOR_SYSTEM_PROMPT
+        )
+        call_seconds = (datetime.utcnow() - call_started).total_seconds()
+
+        parsed = self.parse_json_response(completion.text)
+
+        response_text = ""
+        insights: List[str] = []
+        recommendations: List[str] = []
+        confidence = 0.5
+        if isinstance(parsed, dict):
+            raw_response = parsed.get("response")
+            if isinstance(raw_response, str):
+                response_text = raw_response.strip()
+            insights = [
+                str(item) for item in parsed.get("insights") or [] if str(item).strip()
+            ][:5]
+            recommendations = [
+                str(item)
+                for item in parsed.get("recommendations") or []
+                if str(item).strip()
+            ][:5]
+            try:
+                confidence = min(1.0, max(0.0, float(parsed.get("confidence", 0.5))))
+            except (TypeError, ValueError):
+                confidence = 0.5
+        if not response_text:
+            # Contract violation (non-JSON or empty "response"): the raw
+            # completion is still a real model answer — use it verbatim
+            # rather than failing the conversation.
+            response_text = completion.text.strip()
+        if not response_text:
+            raise LLMResponseError("LLM returned an empty completion")
+
+        synthesis = AgentResult(
+            agent_name="llm_synthesis",
+            success=True,
+            execution_time=call_seconds,
+            analysis={"model": completion.model, "parsed_contract": bool(parsed)},
+            recommendations=recommendations,
+            insights=insights,
+            confidence_score=confidence,
+            tokens_used=completion.input_tokens + completion.output_tokens,
+            api_cost=completion.cost,
+        )
+
+        agent_results = list(workflow_result.get("agent_results", []))
+        agent_results.append(asdict(synthesis))
+
+        metadata = dict(workflow_result.get("metadata", {}))
+        metadata["agents_used"] = list(metadata.get("agents_used", [])) + [
+            "llm_synthesis"
+        ]
+        metadata["llm"] = {
+            "model": completion.model,
+            "input_tokens": completion.input_tokens,
+            "output_tokens": completion.output_tokens,
+            "api_cost": completion.cost,
+            "parsed_contract": bool(parsed),
+        }
+        metadata["confidence"] = confidence
+
+        return {
+            **workflow_result,
+            "success": True,
+            "response": response_text,
+            "insights": insights,
+            "recommendations": recommendations,
+            "agent_results": agent_results,
+            "metadata": metadata,
+        }
+
+    def _compose_synthesis_prompt(
+        self,
+        state: ConversationState,
+        workflow_result: Dict[str, Any],
+    ) -> str:
+        """Build the user prompt: message + financial context + findings."""
+
+        compact_findings = []
+        for item in workflow_result.get("agent_results", []):
+            if not item.get("success"):
+                continue
+            compact_findings.append(
+                {
+                    "agent": item.get("agent_type") or item.get("agent_name"),
+                    "analysis": item.get("analysis"),
+                    "recommendations": item.get("recommendations"),
+                    "insights": item.get("insights"),
+                }
+            )
+
+        payload = {
+            "user_message": state.get("user_message", ""),
+            "financial_context": state.get("user_context") or {},
+            "specialist_findings": compact_findings,
+        }
+        prompt = json.dumps(payload, default=str)
+        # Hard cap the prompt (~6k tokens of JSON). Truncation can only cut
+        # tail-end findings detail — the user message and context lead.
+        return prompt[:24000]
+
     async def _synthesize_agent_results(
-        self, 
-        agent_results: List[Dict[str, Any]], 
+        self,
+        agent_results: List[Dict[str, Any]],
         state: ConversationState
     ) -> str:
         """Synthesize results from multiple agents into coherent response"""
@@ -558,15 +758,19 @@ class AdvancedOrchestrator(BaseAgent):
         else:
             return "comprehensive"
     
-    def _create_error_response(self, error_message: str) -> Dict[str, Any]:
-        """Create error response"""
+    def _create_error_response(
+        self, error_message: str, error_type: str = "orchestration_error"
+    ) -> Dict[str, Any]:
+        """Create a typed, machine-readable error response."""
         return {
             "success": False,
             "error": error_message,
+            "error_type": error_type,
             "response": "I encountered an issue processing your request. Please try rephrasing your question.",
             "metadata": {
                 "orchestrator_type": "advanced",
                 "workflow_type": "error",
+                "error_type": error_type,
                 "processing_time": 0.0,
                 "timestamp": datetime.utcnow().isoformat()
             },

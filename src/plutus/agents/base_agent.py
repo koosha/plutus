@@ -3,52 +3,42 @@ Plutus Base Agent
 ================
 
 Base class for all Plutus agents providing common functionality including
-error handling, monitoring, Claude API integration, and result formatting.
+error handling, monitoring, LLM provider access, and result formatting.
 """
 
-import asyncio
 import time
 import logging
 from typing import Dict, List, Any, Optional
-from datetime import datetime
 from abc import ABC, abstractmethod
 
 from ..core.config import get_config
-from ..models.state import ConversationState, AgentResult
-
-# Import Claude API components
-try:
-    from anthropic import AsyncAnthropic
-    ANTHROPIC_AVAILABLE = True
-except ImportError:
-    ANTHROPIC_AVAILABLE = False
+from ..llm import LLMCompletion, LLMNotConfiguredError, LLMProvider
+from ..models.state import ConversationState
 
 logger = logging.getLogger(__name__)
 
 class BaseAgent(ABC):
     """
     Base class for all Plutus agents
-    
+
     Provides:
-    - Claude API integration
+    - LLM provider access (injected; None = agent runs deterministically)
     - Error handling and retries
     - Performance monitoring
     - Standardized result formatting
     - Logging and observability
     """
-    
-    def __init__(self, agent_name: str = None):
+
+    def __init__(self, agent_name: str = None, provider: Optional[LLMProvider] = None):
         self.agent_name = agent_name or self.__class__.__name__
         self.config = get_config()
         self.logger = logging.getLogger(f"plutus.agents.{self.agent_name.replace(' ', '_').lower()}")
-        
-        # Initialize Claude client if available
-        self.claude_client = None
-        if self.config.anthropic_api_key and ANTHROPIC_AVAILABLE:
-            self.claude_client = AsyncAnthropic(api_key=self.config.anthropic_api_key)
-        elif not self.config.anthropic_api_key:
-            self.logger.warning(f"{agent_name}: No API key found, will use simulation mode")
-        
+
+        # The LLM seam. Deterministic agents leave this as None; anything
+        # that needs generation calls `call_llm` and gets a typed
+        # LLMNotConfiguredError when no provider was injected.
+        self.llm = provider
+
         # Performance tracking
         self.total_calls = 0
         self.total_errors = 0
@@ -114,80 +104,38 @@ class BaseAgent(ABC):
         """
         pass
     
-    async def call_claude(self, 
-                         prompt: str, 
-                         system_prompt: Optional[str] = None,
-                         max_tokens: Optional[int] = None) -> Dict[str, Any]:
+    async def call_llm(self,
+                       prompt: str,
+                       system_prompt: Optional[str] = None,
+                       max_output_tokens: Optional[int] = None) -> LLMCompletion:
+        """One real LLM completion through the injected provider.
+
+        There is deliberately NO simulation fallback here: an agent that
+        needs generation either has a configured provider or surfaces the
+        typed error to its caller.
+
+        Raises:
+            LLMNotConfiguredError: no provider was injected.
+            LLMResponseError: the provider call failed.
         """
-        Make authenticated call to Claude API with error handling
-        """
-        
-        if not self.claude_client:
-            # Fallback to simulation
-            return await self._simulate_claude_response(prompt)
-        
-        try:
-            messages = [{"role": "user", "content": prompt}]
-            
-            response = await self.claude_client.messages.create(
-                model=self.config.claude_model,
-                max_tokens=max_tokens or self.config.max_tokens,
-                temperature=self.config.temperature,
-                system=system_prompt,
-                messages=messages
+
+        if self.llm is None:
+            raise LLMNotConfiguredError(
+                f"{self.agent_name}: no LLM provider configured"
             )
-            
-            # Calculate cost
-            input_tokens = response.usage.input_tokens
-            output_tokens = response.usage.output_tokens
-            cost = (
-                input_tokens * self.config.cost_per_input_token +
-                output_tokens * self.config.cost_per_output_token
-            )
-            
-            self.total_api_cost += cost
-            
-            return {
-                "success": True,
-                "content": response.content[0].text,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "cost": cost
-            }
-            
-        except Exception as e:
-            self.logger.error(f"{self.agent_name}: Claude API error - {str(e)}")
-            # Fallback to simulation
-            return await self._simulate_claude_response(prompt)
-    
-    async def _simulate_claude_response(self, prompt: str) -> Dict[str, Any]:
-        """
-        Simulate Claude response when API is not available
-        """
-        
-        # Add small delay to simulate API call
-        await asyncio.sleep(0.5)
-        
-        return {
-            "success": True,
-            "content": self._generate_simulated_response(prompt),
-            "input_tokens": len(prompt.split()) * 1.3,  # Rough estimation
-            "output_tokens": 200,  # Rough estimation
-            "cost": 0.0,
-            "simulated": True
-        }
-    
-    def _generate_simulated_response(self, prompt: str) -> str:
-        """
-        Generate a simulated response based on agent type and prompt
-        
-        Override in subclasses for agent-specific simulation
-        """
-        return f"Simulated response from {self.agent_name} for prompt analysis."
-    
+
+        completion = await self.llm.complete(
+            [{"role": "user", "content": prompt}],
+            system=system_prompt,
+            max_output_tokens=max_output_tokens or self.config.max_output_tokens,
+            temperature=self.config.llm_temperature,
+        )
+        self.total_api_cost += completion.cost
+        return completion
+
     def parse_json_response(self, content: str) -> Optional[Dict[str, Any]]:
         """
-        Parse JSON response from Claude with error handling
+        Parse a JSON object out of an LLM response with error handling
         """
         
         try:

@@ -326,26 +326,3 @@ class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseForma
             base_confidence += 0.2
         
         return min(1.0, base_confidence)
-    
-    def _generate_simulated_response(self, prompt: str) -> str:
-        """Generate simulated response for testing"""
-        
-        return json.dumps({
-            "financial_health_analysis": {
-                "net_worth": 85000,
-                "savings_rate": 0.18,
-                "emergency_fund_months": 4.2,
-                "wealth_health_score": 72,
-                "financial_health_grade": "B"
-            },
-            "key_insights": [
-                "Good savings rate at 18% of income",
-                "Emergency fund needs slight boost to 6 months",
-                "Overall financial health is good with room for improvement"
-            ],
-            "recommendations": [
-                "Build emergency fund to 6 months of expenses",
-                "Continue strong savings habits",
-                "Consider investment account diversification"
-            ]
-        })

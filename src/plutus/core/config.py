@@ -6,23 +6,27 @@ Centralized configuration for the Plutus AI system including API keys,
 model settings, database connections, and operational parameters.
 """
 
+import logging
 import os
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from pathlib import Path
 
-# Load environment variables from .env file
+logger = logging.getLogger(__name__)
+
+# Load environment variables from a repo-local .env file when present.
+# Importing this module must never print, raise, or require any file to exist:
+# Plutus is imported by the Wealthify backend at server startup, where a missing
+# sample-data file or .env is normal (integration mode).
 try:
     from dotenv import load_dotenv
-    # Find .env file in project root
-    env_path = Path(__file__).parent.parent.parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-        print(f"✅ Loaded environment from {env_path}")
-    else:
-        print(f"⚠️ No .env file found at {env_path}")
+
+    _env_path = Path(__file__).parent.parent.parent.parent / ".env"
+    if _env_path.exists():
+        load_dotenv(_env_path)
+        logger.debug("Loaded environment from %s", _env_path)
 except ImportError:
-    print("⚠️ python-dotenv not installed - environment variables from system only")
+    logger.debug("python-dotenv not installed - using system environment only")
 
 @dataclass
 class PlutusConfig:
@@ -30,17 +34,18 @@ class PlutusConfig:
     Central configuration for Plutus system
     """
     
-    # Claude API Configuration
-    anthropic_api_key: Optional[str] = None
-    claude_model: str = "claude-3-5-sonnet-20241022"
-    max_tokens: int = 4000
-    temperature: float = 0.1
+    # LLM Provider Configuration (the plutus.llm package is the only caller).
+    # The API key is only ever read from the environment — never hardcoded.
+    openai_api_key: Optional[str] = None
+    model: str = "gpt-5-mini"
+    max_output_tokens: int = 1024
+    # None = "use the provider's default"; omitted from requests entirely
+    # (the current reasoning-model family rejects non-default temperatures).
+    llm_temperature: Optional[float] = None
     request_timeout: float = 30.0
     max_retries: int = 3
-    
-    # Cost Management
-    cost_per_input_token: float = 0.000003   # $3 per million tokens
-    cost_per_output_token: float = 0.000015  # $15 per million tokens
+
+    # Cost Management (per-request pricing lives in plutus.llm.cost_for)
     daily_cost_limit: float = 50.0           # $50 daily limit
     
     # Database Configuration
@@ -79,7 +84,24 @@ class PlutusConfig:
         """Initialize configuration from environment variables"""
         
         # Load from environment
-        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", self.anthropic_api_key)
+        self.openai_api_key = os.getenv("OPENAI_API_KEY", self.openai_api_key)
+        self.model = os.getenv("PLUTUS_MODEL", self.model)
+        _temperature = os.getenv("PLUTUS_TEMPERATURE")
+        if _temperature:
+            try:
+                self.llm_temperature = float(_temperature)
+            except ValueError:
+                logger.warning(
+                    "Ignoring non-numeric PLUTUS_TEMPERATURE=%r", _temperature
+                )
+        _max_out = os.getenv("PLUTUS_MAX_OUTPUT_TOKENS")
+        if _max_out:
+            try:
+                self.max_output_tokens = int(_max_out)
+            except ValueError:
+                logger.warning(
+                    "Ignoring non-numeric PLUTUS_MAX_OUTPUT_TOKENS=%r", _max_out
+                )
         self.database_url = os.getenv("DATABASE_URL", self.database_url)
         self.redis_url = os.getenv("REDIS_URL", self.redis_url)
         
@@ -91,31 +113,27 @@ class PlutusConfig:
         self.validate()
     
     def validate(self):
-        """Validate configuration settings"""
-        
-        if not self.anthropic_api_key:
-            print("⚠️  ANTHROPIC_API_KEY not found - will run in simulation mode")
-            print("   Add ANTHROPIC_API_KEY to environment variables for AI-powered responses")
-        
-        # Skip file validation in integration mode (files not needed when integrated)
+        """Log configuration warnings.
+
+        Never raises: a missing key or sample-data file downgrades behavior
+        (callers decide how), it must not make `import plutus` explode.
+        """
+
+        # Sample data files are only relevant in standalone mode, and even
+        # there they are optional — data_service handles their absence.
         if self.standalone_mode:
-            # Only validate sample files when running standalone
             project_root = Path(__file__).parent.parent.parent.parent
-            sample_users_path = str(project_root / "data/sample_users.json")
-            sample_questions_path = str(project_root / "data/sample_questions.json")
-            
-            if not Path(sample_users_path).exists():
-                print(f"⚠️  Sample users file not found: {sample_users_path}")
-            
-            if not Path(sample_questions_path).exists():
-                print(f"⚠️  Sample questions file not found: {sample_questions_path}")
+            for rel_path in (self.sample_users_path, self.sample_questions_path):
+                abs_path = project_root / rel_path
+                if not abs_path.exists():
+                    logger.warning("Sample data file not found: %s", abs_path)
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert config to dictionary"""
+        """Convert config to dictionary (never includes the API key)."""
         return {
-            "claude_model": self.claude_model,
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
+            "model": self.model,
+            "max_output_tokens": self.max_output_tokens,
+            "llm_temperature": self.llm_temperature,
             "max_conversation_length": self.max_conversation_length,
             "context_ttl_seconds": self.context_ttl_seconds,
             "max_parallel_agents": self.max_parallel_agents,
@@ -136,8 +154,6 @@ class PlutusConfig:
     def development(cls) -> "PlutusConfig":
         """Development configuration preset"""
         return cls(
-            claude_model="claude-3-5-sonnet-20241022",
-            temperature=0.1,
             max_conversation_length=50,
             context_ttl_seconds=1800,  # 30 minutes
             daily_cost_limit=10.0,     # $10 for development
@@ -151,8 +167,6 @@ class PlutusConfig:
     def production(cls) -> "PlutusConfig":
         """Production configuration preset"""
         return cls(
-            claude_model="claude-3-5-sonnet-20241022",
-            temperature=0.1,
             max_conversation_length=100,
             context_ttl_seconds=3600,  # 1 hour
             daily_cost_limit=200.0,    # $200 for production
