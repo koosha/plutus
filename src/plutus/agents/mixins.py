@@ -174,14 +174,19 @@ class ResponseFormattingMixin:
                 else:
                     response_parts.append(f"- {key.replace('_', ' ').title()}: {value}")
         
-        # Recommendations
+        # Recommendations — agents emit either plain strings or
+        # {title, description} dicts; render both.
         if recommendations:
             response_parts.append("\n## Recommendations")
             for i, rec in enumerate(recommendations[:5], 1):  # Limit to top 5
-                title = rec.get('title', f'Recommendation {i}')
-                description = rec.get('description', 'No description available')
-                response_parts.append(f"{i}. **{title}**")
-                response_parts.append(f"   {description}")
+                if isinstance(rec, dict):
+                    title = rec.get('title', f'Recommendation {i}')
+                    description = rec.get('description', '')
+                    response_parts.append(f"{i}. **{title}**")
+                    if description:
+                        response_parts.append(f"   {description}")
+                else:
+                    response_parts.append(f"{i}. {rec}")
         
         # Confidence indicator
         confidence_text = "High" if confidence > 0.8 else "Medium" if confidence > 0.5 else "Low"

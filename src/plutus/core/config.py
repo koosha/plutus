@@ -34,17 +34,18 @@ class PlutusConfig:
     Central configuration for Plutus system
     """
     
-    # Claude API Configuration
-    anthropic_api_key: Optional[str] = None
-    claude_model: str = "claude-3-5-sonnet-20241022"
-    max_tokens: int = 4000
-    temperature: float = 0.1
+    # LLM Provider Configuration (the plutus.llm package is the only caller).
+    # The API key is only ever read from the environment — never hardcoded.
+    openai_api_key: Optional[str] = None
+    model: str = "gpt-5-mini"
+    max_output_tokens: int = 1024
+    # None = "use the provider's default"; omitted from requests entirely
+    # (the current reasoning-model family rejects non-default temperatures).
+    llm_temperature: Optional[float] = None
     request_timeout: float = 30.0
     max_retries: int = 3
-    
-    # Cost Management
-    cost_per_input_token: float = 0.000003   # $3 per million tokens
-    cost_per_output_token: float = 0.000015  # $15 per million tokens
+
+    # Cost Management (per-request pricing lives in plutus.llm.cost_for)
     daily_cost_limit: float = 50.0           # $50 daily limit
     
     # Database Configuration
@@ -83,7 +84,24 @@ class PlutusConfig:
         """Initialize configuration from environment variables"""
         
         # Load from environment
-        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", self.anthropic_api_key)
+        self.openai_api_key = os.getenv("OPENAI_API_KEY", self.openai_api_key)
+        self.model = os.getenv("PLUTUS_MODEL", self.model)
+        _temperature = os.getenv("PLUTUS_TEMPERATURE")
+        if _temperature:
+            try:
+                self.llm_temperature = float(_temperature)
+            except ValueError:
+                logger.warning(
+                    "Ignoring non-numeric PLUTUS_TEMPERATURE=%r", _temperature
+                )
+        _max_out = os.getenv("PLUTUS_MAX_OUTPUT_TOKENS")
+        if _max_out:
+            try:
+                self.max_output_tokens = int(_max_out)
+            except ValueError:
+                logger.warning(
+                    "Ignoring non-numeric PLUTUS_MAX_OUTPUT_TOKENS=%r", _max_out
+                )
         self.database_url = os.getenv("DATABASE_URL", self.database_url)
         self.redis_url = os.getenv("REDIS_URL", self.redis_url)
         
@@ -111,11 +129,11 @@ class PlutusConfig:
                     logger.warning("Sample data file not found: %s", abs_path)
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert config to dictionary"""
+        """Convert config to dictionary (never includes the API key)."""
         return {
-            "claude_model": self.claude_model,
-            "max_tokens": self.max_tokens,
-            "temperature": self.temperature,
+            "model": self.model,
+            "max_output_tokens": self.max_output_tokens,
+            "llm_temperature": self.llm_temperature,
             "max_conversation_length": self.max_conversation_length,
             "context_ttl_seconds": self.context_ttl_seconds,
             "max_parallel_agents": self.max_parallel_agents,
@@ -136,8 +154,6 @@ class PlutusConfig:
     def development(cls) -> "PlutusConfig":
         """Development configuration preset"""
         return cls(
-            claude_model="claude-3-5-sonnet-20241022",
-            temperature=0.1,
             max_conversation_length=50,
             context_ttl_seconds=1800,  # 30 minutes
             daily_cost_limit=10.0,     # $10 for development
@@ -151,8 +167,6 @@ class PlutusConfig:
     def production(cls) -> "PlutusConfig":
         """Production configuration preset"""
         return cls(
-            claude_model="claude-3-5-sonnet-20241022",
-            temperature=0.1,
             max_conversation_length=100,
             context_ttl_seconds=3600,  # 1 hour
             daily_cost_limit=200.0,    # $200 for production
