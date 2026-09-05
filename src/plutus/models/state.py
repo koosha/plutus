@@ -105,6 +105,19 @@ class UserContext:
     context_version: int = 1
     completeness_score: float = 0.0
 
+    def to_dict(self) -> Dict[str, Any]:
+        """JSON-safe dict view of the context.
+
+        Used by `create_conversation_state` and the orchestrator when
+        embedding the context into a ConversationState; datetimes are
+        rendered as ISO-8601 strings so the result is serializable.
+        """
+        from dataclasses import asdict
+
+        data = asdict(self)
+        data["last_updated"] = self.last_updated.isoformat()
+        return data
+
 @dataclass
 class AgentResult:
     """

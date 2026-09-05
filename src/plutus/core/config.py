@@ -6,23 +6,27 @@ Centralized configuration for the Plutus AI system including API keys,
 model settings, database connections, and operational parameters.
 """
 
+import logging
 import os
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 from pathlib import Path
 
-# Load environment variables from .env file
+logger = logging.getLogger(__name__)
+
+# Load environment variables from a repo-local .env file when present.
+# Importing this module must never print, raise, or require any file to exist:
+# Plutus is imported by the Wealthify backend at server startup, where a missing
+# sample-data file or .env is normal (integration mode).
 try:
     from dotenv import load_dotenv
-    # Find .env file in project root
-    env_path = Path(__file__).parent.parent.parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-        print(f"✅ Loaded environment from {env_path}")
-    else:
-        print(f"⚠️ No .env file found at {env_path}")
+
+    _env_path = Path(__file__).parent.parent.parent.parent / ".env"
+    if _env_path.exists():
+        load_dotenv(_env_path)
+        logger.debug("Loaded environment from %s", _env_path)
 except ImportError:
-    print("⚠️ python-dotenv not installed - environment variables from system only")
+    logger.debug("python-dotenv not installed - using system environment only")
 
 @dataclass
 class PlutusConfig:
@@ -91,24 +95,20 @@ class PlutusConfig:
         self.validate()
     
     def validate(self):
-        """Validate configuration settings"""
-        
-        if not self.anthropic_api_key:
-            print("⚠️  ANTHROPIC_API_KEY not found - will run in simulation mode")
-            print("   Add ANTHROPIC_API_KEY to environment variables for AI-powered responses")
-        
-        # Skip file validation in integration mode (files not needed when integrated)
+        """Log configuration warnings.
+
+        Never raises: a missing key or sample-data file downgrades behavior
+        (callers decide how), it must not make `import plutus` explode.
+        """
+
+        # Sample data files are only relevant in standalone mode, and even
+        # there they are optional — data_service handles their absence.
         if self.standalone_mode:
-            # Only validate sample files when running standalone
             project_root = Path(__file__).parent.parent.parent.parent
-            sample_users_path = str(project_root / "data/sample_users.json")
-            sample_questions_path = str(project_root / "data/sample_questions.json")
-            
-            if not Path(sample_users_path).exists():
-                print(f"⚠️  Sample users file not found: {sample_users_path}")
-            
-            if not Path(sample_questions_path).exists():
-                print(f"⚠️  Sample questions file not found: {sample_questions_path}")
+            for rel_path in (self.sample_users_path, self.sample_questions_path):
+                abs_path = project_root / rel_path
+                if not abs_path.exists():
+                    logger.warning("Sample data file not found: %s", abs_path)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert config to dictionary"""
