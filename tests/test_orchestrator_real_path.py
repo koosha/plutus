@@ -73,6 +73,24 @@ class TestRealPathWithMockedProvider:
         assert "financial_context" in payload
         assert isinstance(payload["specialist_findings"], list)
 
+    async def test_integration_supplied_context_is_used_verbatim(
+        self, fake_provider
+    ):
+        orchestrator = PlutusOrchestrator(provider=fake_provider)
+        external_context = {
+            "user_id": "user-9",
+            "net_worth": 123456.0,
+            "accounts": [{"id": "acct-1", "balance": 100.0}],
+            "wealth_health": {"overall_score": 71},
+        }
+        result = await orchestrator.process_message(
+            "How am I doing?", "user-9", user_context=external_context
+        )
+
+        assert result["success"] is True
+        payload = json.loads(fake_provider.calls[0]["messages"][0]["content"])
+        assert payload["financial_context"] == external_context
+
     async def test_non_contract_completion_degrades_to_verbatim_text(self):
         provider = FakeProvider(raw_text="Plain prose, not JSON at all.")
         orchestrator = PlutusOrchestrator(provider=provider)

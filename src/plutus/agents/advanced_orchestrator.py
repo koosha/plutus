@@ -156,19 +156,23 @@ class AdvancedOrchestrator(BaseAgent):
         return await self.process_message(user_message, user_id, session_id)
     
     async def process_message(
-        self, 
-        user_message: str, 
-        user_id: str, 
-        session_id: Optional[str] = None
+        self,
+        user_message: str,
+        user_id: str,
+        session_id: Optional[str] = None,
+        user_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Process user message through advanced multi-agent workflow.
-        
+
         Args:
             user_message: User's input message
             user_id: User identifier
             session_id: Optional session identifier for conversation continuity
-            
+            user_context: Integration-supplied financial context (e.g. built
+                by the host app from its live database). When provided it is
+                used verbatim and the internal context service is bypassed.
+
         Returns:
             Comprehensive response from coordinated agents
         """
@@ -188,7 +192,9 @@ class AdvancedOrchestrator(BaseAgent):
                 )
 
             # 1. Build conversation state
-            state = await self._build_conversation_state(user_message, user_id, session_id)
+            state = await self._build_conversation_state(
+                user_message, user_id, session_id, user_context
+            )
 
             # 2. Analyze conversation and determine agent routing
             routing_analysis = await self._analyze_conversation_routing(user_message, state)
@@ -222,22 +228,30 @@ class AdvancedOrchestrator(BaseAgent):
             return self._create_error_response(f"Advanced orchestration failed: {str(e)}")
     
     async def _build_conversation_state(
-        self, 
-        user_message: str, 
-        user_id: str, 
-        session_id: Optional[str]
+        self,
+        user_message: str,
+        user_id: str,
+        session_id: Optional[str],
+        user_context: Optional[Dict[str, Any]] = None,
     ) -> ConversationState:
-        """Build comprehensive conversation state"""
-        
-        # Get user context
-        user_context = await self.context_service.get_user_context(user_id)
-        
+        """Build comprehensive conversation state.
+
+        An integration-supplied `user_context` wins; otherwise the internal
+        context service builds one (standalone mode).
+        """
+
+        if user_context is None:
+            built = await self.context_service.get_user_context(user_id)
+            user_context = (
+                built.to_dict() if hasattr(built, "to_dict") else built
+            )
+
         # Build conversation state
         state: ConversationState = {
             "user_message": user_message,
             "user_id": user_id,
             "session_id": session_id or f"session_{user_id}_{datetime.utcnow().timestamp()}",
-            "user_context": user_context.to_dict() if hasattr(user_context, 'to_dict') else user_context,
+            "user_context": user_context,
             "agent_results": [],
             "conversation_history": [],
             "metadata": {
