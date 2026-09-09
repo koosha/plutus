@@ -79,13 +79,23 @@ class AdvancedOrchestrator(BaseAgent):
     """
     
     def __init__(self, provider: Optional[LLMProvider] = None):
+        config = get_config()
+
         # Resolve the LLM provider: explicit injection wins (tests, custom
         # vendors); otherwise build the production provider from the
         # environment. An unconfigured environment leaves the provider as
         # None and process_message returns a typed error response.
+        #
+        # The configured timeout and retry budget are handed to the SDK here.
+        # They used to be declared in PlutusConfig and never read, so the
+        # provider silently used its own defaults and the config was a claim
+        # about a control nobody applied.
         if provider is None:
             try:
-                provider = OpenAIProvider()
+                provider = OpenAIProvider(
+                    timeout=config.request_timeout,
+                    max_retries=config.max_retries,
+                )
             except LLMNotConfiguredError:
                 logger.info(
                     "No LLM provider configured (OPENAI_API_KEY absent) — "
@@ -208,7 +218,21 @@ class AdvancedOrchestrator(BaseAgent):
             # 4. Real LLM synthesis: compose the financial context and the
             # specialist findings into one completion that produces the
             # user-facing response (validated into AgentResult).
-            result = await self._synthesize_with_llm(state, result)
+            #
+            # Bounded by the configured wall-clock deadline. The SDK's own
+            # per-attempt timeout does not cap total time once retries are in
+            # play, so without this a "30 second timeout" can hold a caller's
+            # request open for two minutes.
+            try:
+                result = await asyncio.wait_for(
+                    self._synthesize_with_llm(state, result),
+                    timeout=self.config.llm_deadline_seconds,
+                )
+            except asyncio.TimeoutError as exc:
+                raise LLMResponseError(
+                    "LLM synthesis exceeded "
+                    f"{self.config.llm_deadline_seconds:.0f}s"
+                ) from exc
 
             # 5. Calculate processing time
             processing_time = (datetime.utcnow() - start_time).total_seconds()
@@ -425,16 +449,27 @@ class AdvancedOrchestrator(BaseAgent):
         logger.info(f"🔄 Executing {execution_strategy} workflow with agents: {agents_to_run}")
         
         agent_results = []
-        
+
         try:
             if execution_strategy == "parallel":
-                # Run agents in parallel
-                tasks = []
-                for agent_name in agents_to_run:
-                    agent = self._get_agent_by_name(agent_name)
-                    if agent:
-                        tasks.append(agent.process(state))
-                
+                # Fan-out is bounded by max_parallel_agents. Unbounded gather
+                # is fine for four in-process agents and stops being fine the
+                # moment one of them does I/O — the limit was already
+                # documented in the config, it just was not applied.
+                semaphore = asyncio.Semaphore(
+                    max(1, self.config.max_parallel_agents)
+                )
+
+                async def _bounded(agent_name: str):
+                    async with semaphore:
+                        return await self._run_agent(agent_name, state)
+
+                tasks = [
+                    _bounded(agent_name)
+                    for agent_name in agents_to_run
+                    if self._get_agent_by_name(agent_name)
+                ]
+
                 if tasks:
                     results = await asyncio.gather(*tasks, return_exceptions=True)
                     for result in results:
@@ -442,18 +477,18 @@ class AdvancedOrchestrator(BaseAgent):
                             logger.error(f"Agent execution error: {result}")
                         else:
                             agent_results.append(result)
-            
+
             else:
                 # Run agents sequentially
                 for agent_name in agents_to_run:
-                    agent = self._get_agent_by_name(agent_name)
-                    if agent:
-                        result = await agent.process(state)
-                        agent_results.append(result)
-                        
-                        # Update state with results for next agent
-                        state["agent_results"] = agent_results
-            
+                    if not self._get_agent_by_name(agent_name):
+                        continue
+                    result = await self._run_agent(agent_name, state)
+                    agent_results.append(result)
+
+                    # Update state with results for next agent
+                    state["agent_results"] = agent_results
+
             # Synthesize results
             final_response = await self._synthesize_agent_results(agent_results, state)
             
@@ -476,6 +511,38 @@ class AdvancedOrchestrator(BaseAgent):
             logger.error(f"❌ Fallback workflow execution failed: {e}")
             return self._create_error_response(f"Workflow execution failed: {str(e)}")
     
+    async def _run_agent(
+        self,
+        agent_name: str,
+        state: ConversationState,
+    ) -> Dict[str, Any]:
+        """Run one specialist under the configured per-agent deadline.
+
+        A specialist that hangs must not hang the conversation. On timeout it
+        yields the same error-shaped result an exception would, so the
+        synthesis step sees one failed agent rather than never running.
+        """
+        agent = self._get_agent_by_name(agent_name)
+        try:
+            return await asyncio.wait_for(
+                agent.process(state),
+                timeout=self.config.agent_timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                "Agent %s exceeded %.0fs and was cancelled",
+                agent_name,
+                self.config.agent_timeout_seconds,
+            )
+            return {
+                "agent_name": agent_name,
+                "agent_type": agent_name,
+                "success": False,
+                "execution_time": self.config.agent_timeout_seconds,
+                "error": "agent_timeout",
+                "response": "",
+            }
+
     async def _synthesize_with_llm(
         self,
         state: ConversationState,
@@ -707,28 +774,34 @@ class AdvancedOrchestrator(BaseAgent):
         state["routing_analysis"] = routing_analysis
         return state
     
+    # The LangGraph nodes route through _run_agent too, so the per-agent
+    # deadline holds on both execution paths rather than only the fallback.
     async def _langgraph_financial_analysis(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """LangGraph node for financial analysis"""
-        result = await self.financial_agent.process(state)
-        state["agent_results"].append(result)
+        state["agent_results"].append(
+            await self._run_agent("financial_analysis", state)
+        )
         return state
-    
+
     async def _langgraph_goal_extraction(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """LangGraph node for goal extraction"""
-        result = await self.goal_agent.process(state)
-        state["agent_results"].append(result)
+        state["agent_results"].append(
+            await self._run_agent("goal_extraction", state)
+        )
         return state
-    
+
     async def _langgraph_risk_assessment(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """LangGraph node for risk assessment"""
-        result = await self.risk_agent.process(state)
-        state["agent_results"].append(result)
+        state["agent_results"].append(
+            await self._run_agent("risk_assessment", state)
+        )
         return state
-    
+
     async def _langgraph_generate_recommendations(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """LangGraph node for generating recommendations"""
-        result = await self.recommendation_agent.process(state)
-        state["agent_results"].append(result)
+        state["agent_results"].append(
+            await self._run_agent("recommendation", state)
+        )
         return state
     
     async def _langgraph_synthesize_results(self, state: Dict[str, Any]) -> Dict[str, Any]:
