@@ -2,18 +2,31 @@
 Plutus Testing Framework
 ========================
 
-Tests the Plutus system with sample users and questions
+Exercises the Plutus system against sample users and questions in standalone
+mode, scoring answers on whether they are CORRECT.
+
+The scorer this file used to carry added points for a long answer, for a
+matching complexity label, and for the model's own reported confidence —
+three things a fluent hallucination maximizes. `_evaluate_response_quality`
+now gates on grounding and scope instead (see `plutus.testing.quality`).
+
+This is a development tool: it needs the sample-data files that only exist
+in standalone mode. It is not a release gate. An integrating application
+should run its own offline evaluations against its own data, because only it
+knows what "grounded" means for its users — Wealthify's live under
+`python-backend/tests/plutus_evals/`.
 """
 
 import asyncio
 import json
 import time
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Set
 import logging
 
 from ..agents.orchestrator import PlutusOrchestrator
 from ..services.data_service import get_data_service
 from ..core.config import get_config
+from .quality import is_grounded, numeric_leaves, violates_scope
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -60,7 +73,11 @@ class PlutusTestFramework:
             logger.info(f"   Wealth Score: {user.get('wealth_health', {}).get('overall_score', 'N/A')}")
             
             # Test with different complexity questions
-            user_results = await self._test_user_with_questions(user_id, questions)
+            # The user record is the ground truth the scorer checks
+            # answers against, so it has to travel with the question.
+            user_results = await self._test_user_with_questions(
+                user_id, questions, user_context=user
+            )
             test_results.extend(user_results)
         
         total_time = time.time() - start_time
@@ -74,7 +91,12 @@ class PlutusTestFramework:
         
         return analysis
     
-    async def _test_user_with_questions(self, user_id: str, questions: List[Dict]) -> List[Dict]:
+    async def _test_user_with_questions(
+        self,
+        user_id: str,
+        questions: List[Dict],
+        user_context: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict]:
         """Test a specific user with sample questions"""
         
         results = []
@@ -95,15 +117,20 @@ class PlutusTestFramework:
                     
                     logger.info(f"   🔸 Testing {complexity} question: {question[:50]}...")
                     
-                    result = await self._test_single_question(user_id, question, question_data)
+                    result = await self._test_single_question(
+                        user_id, question, question_data, user_context
+                    )
                     results.append(result)
         
         return results
     
-    async def _test_single_question(self, 
-                                  user_id: str, 
-                                  question: str, 
-                                  question_data: Dict) -> Dict:
+    async def _test_single_question(
+        self,
+        user_id: str,
+        question: str,
+        question_data: Dict,
+        user_context: Optional[Dict[str, Any]] = None,
+    ) -> Dict:
         """Test a single question"""
         
         start_time = time.time()
@@ -118,7 +145,9 @@ class PlutusTestFramework:
             processing_time = time.time() - start_time
             
             # Evaluate response quality
-            quality_score = self._evaluate_response_quality(response, question_data)
+            quality_score = self._evaluate_response_quality(
+                response, question_data, user_context
+            )
             
             return {
                 "user_id": user_id,
@@ -147,43 +176,63 @@ class PlutusTestFramework:
                 "quality_score": 0.0
             }
     
-    def _evaluate_response_quality(self, response: Dict, question_data: Dict) -> float:
+    def _evaluate_response_quality(
+        self,
+        response: Dict,
+        question_data: Dict,
+        user_context: Optional[Dict[str, Any]] = None,
+    ) -> float:
+        """Score a response on correctness, not on how confident it sounds.
+
+        This scorer used to add points for a long answer, for a matching
+        complexity label, and for the model's own reported confidence. All
+        three are maximized by a fluent, confidently wrong answer, which is
+        the failure mode that matters for financial advice — so none of them
+        are here now.
+
+        Scoring is a gate, not a weighted sum: 1.0 only when the answer
+        succeeded, every currency figure in it traces back to the user's own
+        records, and it stayed inside the educational scope. Otherwise 0.0.
+
+        A weighted sum would be worse here, because partial credit is how a
+        hallucination scores 0.5 — "at least it finished and it was long"
+        should not soften an invented account balance.
         """
-        Evaluate response quality (0.0 to 1.0)
+
+        response_text = response.get("response", "") or ""
+
+        if not response.get("success", False):
+            return 0.0
+
+        if not is_grounded(response_text, self._context_amounts(user_context)):
+            return 0.0
+
+        if violates_scope(response_text) is not None:
+            return 0.0
+
+        return 1.0
+
+    @staticmethod
+    def _context_amounts(user_context: Optional[Dict[str, Any]]) -> Set[float]:
+        """Currency values the user's own records actually contain."""
+        return numeric_leaves(user_context or {})
+
+    async def _user_record(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """The sample user behind an id, or None when it cannot be resolved.
+
+        Without it the scorer has no fact set, so an unresolvable user makes
+        every answer look ungrounded — the caller is told, not guessed at.
         """
-        
-        score = 0.0
-        
-        # Basic success check
-        if response.get("success", False):
-            score += 0.3
-        
-        # Response length check (should have substantial content)
-        response_text = response.get("response", "")
-        if len(response_text) > 100:
-            score += 0.2
-        elif len(response_text) > 50:
-            score += 0.1
-        
-        # Complexity matching
-        expected_complexity = question_data.get("complexity", "")
-        actual_complexity = response.get("metadata", {}).get("complexity", "")
-        if expected_complexity == actual_complexity:
-            score += 0.2
-        
-        # Agent appropriateness
-        agents_used = response.get("metadata", {}).get("agents_used", [])
-        if agents_used:
-            score += 0.1
-        
-        # Confidence check
-        confidence = response.get("metadata", {}).get("confidence", 0.0)
-        if confidence > 0.7:
-            score += 0.2
-        elif confidence > 0.5:
-            score += 0.1
-        
-        return min(1.0, score)
+        try:
+            users = await self.data_service.get_all_users()
+        except Exception as e:  # noqa: BLE001 - missing sample data, not a bug
+            logger.warning("Could not load sample users: %s", e)
+            return None
+        for user in users:
+            if user.get("user_id") == user_id:
+                return user
+        logger.warning("No sample record for user %s — grounding will be strict", user_id)
+        return None
     
     def _analyze_test_results(self, results: List[Dict], total_time: float) -> Dict[str, Any]:
         """Analyze test results and generate summary"""
@@ -270,10 +319,14 @@ class PlutusTestFramework:
         # Get random questions
         questions = await self.data_service.get_random_questions(questions_count)
         
+        user_context = await self._user_record(user_id)
+
         results = []
         for question_data in questions:
             question = question_data["question"]
-            result = await self._test_single_question(user_id, question, question_data)
+            result = await self._test_single_question(
+                user_id, question, question_data, user_context
+            )
             results.append(result)
         
         # Analyze results
@@ -302,7 +355,9 @@ class PlutusTestFramework:
             # Test with first 3 questions from category
             for question_data in questions[:3]:
                 question = question_data["question"]
-                result = await self._test_single_question(user_id, question, question_data)
+                result = await self._test_single_question(
+                    user_id, question, question_data, user
+                )
                 results.append(result)
         
         # Analyze results

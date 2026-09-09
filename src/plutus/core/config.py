@@ -4,8 +4,30 @@ Plutus Configuration Management
 
 Centralized configuration for the Plutus AI system including API keys,
 model settings, database connections, and operational parameters.
+
+Every setting here is applied by code somewhere in this package. That is a
+rule, not a description: a config field that names a control nobody enforces
+is worse than no field at all, because it reads like a guarantee. Several
+fields were removed for exactly that reason — see the "Deliberately absent"
+note below — and anything added back has to come with the code that honours
+it.
+
+Deliberately absent
+-------------------
+- ``daily_cost_limit`` — Plutus has no meter, no store and no notion of a
+  user beyond an id string, so it could never enforce a budget. Cost control
+  belongs to the host application, which has all three; in Wealthify that is
+  ``services/plutus_integration/budget.py``.
+- ``enable_pii_scrubbing`` / ``encrypt_sensitive_data`` — no scrubbing or
+  encryption exists in this package. Both read as security guarantees and
+  neither was one. Data minimisation and consent are enforced by the host
+  when it builds the context it passes in.
+- ``enable_agent_caching``, ``enable_metrics``, ``enable_tracing``,
+  ``max_conversation_length``, ``memory_database_path`` — declared, never
+  read.
 """
 
+import dataclasses
 import logging
 import os
 from typing import Optional, Dict, Any
@@ -13,6 +35,42 @@ from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _float_from_env(name: str, current: float) -> float:
+    """Override a float from the environment; ignore unusable values.
+
+    A malformed operational limit must not take the process down at import
+    time — but it also must not silently become something else, so it is
+    logged and the documented default stands.
+    """
+    raw = os.getenv(name)
+    if not raw:
+        return current
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning("Ignoring non-numeric %s=%r", name, raw)
+        return current
+    if value <= 0:
+        logger.warning("Ignoring non-positive %s=%r", name, raw)
+        return current
+    return value
+
+
+def _int_from_env(name: str, current: int) -> int:
+    raw = os.getenv(name)
+    if not raw:
+        return current
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Ignoring non-integer %s=%r", name, raw)
+        return current
+    if value < 0:
+        logger.warning("Ignoring negative %s=%r", name, raw)
+        return current
+    return value
 
 # Load environment variables from a repo-local .env file when present.
 # Importing this module must never print, raise, or require any file to exist:
@@ -42,44 +100,46 @@ class PlutusConfig:
     # None = "use the provider's default"; omitted from requests entirely
     # (the current reasoning-model family rejects non-default temperatures).
     llm_temperature: Optional[float] = None
+    # Per-attempt timeout and retry budget handed to the provider SDK
+    # (plutus.llm.OpenAIProvider) by the orchestrator.
     request_timeout: float = 30.0
     max_retries: int = 3
 
-    # Cost Management (per-request pricing lives in plutus.llm.cost_for)
-    daily_cost_limit: float = 50.0           # $50 daily limit
-    
     # Database Configuration
     database_url: Optional[str] = None
     redis_url: Optional[str] = None
-    
+
     # Memory Management
-    max_conversation_length: int = 100
     context_ttl_seconds: int = 3600
-    memory_database_path: str = "plutus_memory.db"
-    
-    # Agent Configuration
+
+    # Agent Configuration — applied in AdvancedOrchestrator: a semaphore
+    # bounds fan-out, and each specialist run is wrapped in a deadline.
     max_parallel_agents: int = 5
     agent_timeout_seconds: float = 30.0
-    enable_agent_caching: bool = True
-    
+
     # Monitoring & Observability
     enable_logging: bool = True
     log_level: str = "INFO"
-    enable_metrics: bool = True
-    enable_tracing: bool = False
-    
+
     # Integration Settings
     integration_mode: bool = True  # True when running inside Wealthify
     standalone_mode: bool = False  # True when running as standalone service
-    
+
     # Test Data Paths (for standalone testing)
     sample_users_path: str = "data/sample_users.json"
     sample_questions_path: str = "data/sample_questions.json"
-    
-    # Security
-    enable_pii_scrubbing: bool = True
-    encrypt_sensitive_data: bool = True
-    
+
+    @property
+    def llm_deadline_seconds(self) -> float:
+        """Wall-clock ceiling for one synthesis, including retries.
+
+        `request_timeout` bounds a single attempt and the SDK may make
+        `max_retries` more of them, so the honest ceiling for the caller is
+        their product. Without this, a "30 second timeout" can hold a request
+        open for two minutes.
+        """
+        return self.request_timeout * (self.max_retries + 1)
+
     def __post_init__(self):
         """Initialize configuration from environment variables"""
         
@@ -102,9 +162,21 @@ class PlutusConfig:
                 logger.warning(
                     "Ignoring non-numeric PLUTUS_MAX_OUTPUT_TOKENS=%r", _max_out
                 )
+        self.request_timeout = _float_from_env(
+            "PLUTUS_REQUEST_TIMEOUT", self.request_timeout
+        )
+        self.max_retries = _int_from_env(
+            "PLUTUS_MAX_RETRIES", self.max_retries
+        )
+        self.agent_timeout_seconds = _float_from_env(
+            "PLUTUS_AGENT_TIMEOUT", self.agent_timeout_seconds
+        )
+        self.max_parallel_agents = _int_from_env(
+            "PLUTUS_MAX_PARALLEL_AGENTS", self.max_parallel_agents
+        )
         self.database_url = os.getenv("DATABASE_URL", self.database_url)
         self.redis_url = os.getenv("REDIS_URL", self.redis_url)
-        
+
         # Integration mode detection
         self.integration_mode = os.getenv("PLUTUS_INTEGRATION_MODE", "true").lower() == "true"
         self.standalone_mode = not self.integration_mode
@@ -134,47 +206,45 @@ class PlutusConfig:
             "model": self.model,
             "max_output_tokens": self.max_output_tokens,
             "llm_temperature": self.llm_temperature,
-            "max_conversation_length": self.max_conversation_length,
+            "request_timeout": self.request_timeout,
+            "max_retries": self.max_retries,
+            "llm_deadline_seconds": self.llm_deadline_seconds,
             "context_ttl_seconds": self.context_ttl_seconds,
             "max_parallel_agents": self.max_parallel_agents,
             "agent_timeout_seconds": self.agent_timeout_seconds,
-            "daily_cost_limit": self.daily_cost_limit,
             "integration_mode": self.integration_mode,
             "standalone_mode": self.standalone_mode,
             "enable_logging": self.enable_logging,
             "log_level": self.log_level
         }
-    
+
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> "PlutusConfig":
-        """Create config from dictionary"""
-        return cls(**config_dict)
-    
+        """Create config from dictionary.
+
+        Computed fields (`llm_deadline_seconds`) round-trip out of
+        `to_dict` but are not constructor arguments, so they are dropped
+        rather than raising.
+        """
+        fields = {f.name for f in dataclasses.fields(cls)}
+        return cls(**{k: v for k, v in config_dict.items() if k in fields})
+
     @classmethod
     def development(cls) -> "PlutusConfig":
         """Development configuration preset"""
         return cls(
-            max_conversation_length=50,
             context_ttl_seconds=1800,  # 30 minutes
-            daily_cost_limit=10.0,     # $10 for development
             enable_logging=True,
             log_level="DEBUG",
-            enable_metrics=True,
-            enable_tracing=True
         )
-    
+
     @classmethod
     def production(cls) -> "PlutusConfig":
         """Production configuration preset"""
         return cls(
-            max_conversation_length=100,
             context_ttl_seconds=3600,  # 1 hour
-            daily_cost_limit=200.0,    # $200 for production
             enable_logging=True,
             log_level="INFO",
-            enable_metrics=True,
-            enable_tracing=True,
-            encrypt_sensitive_data=True
         )
 
 # Global config instance
