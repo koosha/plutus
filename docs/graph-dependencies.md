@@ -49,3 +49,10 @@ before publication is considered complete. Local source tests can confirm goal
 routing and error behavior, but cannot substitute for the Python 3.10/3.12 graph
 and installed-wheel runs. No paid provider call or persistent checkpointer is
 used in any of these checks.
+
+The Python 3.9 minimal audit also exposed `python-dotenv` 1.2.1
+(`PYSEC-2026-2270`). Its only Plutus use was implicit import-time `.env` loading.
+That unnecessary file discovery and dependency were removed; explicit process
+environment settings remain supported. The host now owns all configuration-file
+loading. A fresh-import regression rejects any dotenv import or `.env` access
+and verifies that explicit model, timeout and retry settings still apply.

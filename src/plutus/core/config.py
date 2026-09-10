@@ -80,19 +80,8 @@ def _from_env(env_name, name, current):
         logger.warning("Ignoring invalid operational setting %s", env_name)
         return current
 
-# Load environment variables from a repo-local .env file when present.
-# Importing this module must never print, raise, or require any file to exist:
-# Plutus is imported by the Wealthify backend at server startup, where a missing
-# sample-data file or .env is normal (integration mode).
-try:
-    from dotenv import load_dotenv
-
-    _env_path = Path(__file__).parent.parent.parent.parent / ".env"
-    if _env_path.exists():
-        load_dotenv(_env_path)
-        logger.debug("Loaded environment from %s", _env_path)
-except ImportError:
-    logger.debug("python-dotenv not installed - using system environment only")
+# The host owns environment loading. Importing this library never discovers
+# configuration files or mutates process settings from a repository-local file.
 
 @dataclass
 class PlutusConfig:

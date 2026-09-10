@@ -37,6 +37,12 @@ result = await orchestrator.process_message(
 
 `provider` implements `plutus.llm.LLMProvider`. Production may configure `OPENAI_API_KEY` and `PLUTUS_MODEL`; no credentials are needed to import the package or run the tests. A missing provider produces a typed unavailable result. This library does not start a web server or load sample financial data at runtime.
 
+The host owns configuration loading. Plutus reads explicit process environment
+variables and constructor settings; importing it never discovers or loads a
+repository-local `.env` file. Applications that previously relied on that implicit
+behavior must load their chosen configuration before importing or constructing
+Plutus. The package no longer depends on `python-dotenv`.
+
 Run the complete offline example after installation:
 
 ```bash

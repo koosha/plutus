@@ -75,6 +75,54 @@ def test_config_reads_model_from_env(monkeypatch):
     assert cfg.model == "test-model-override"
 
 
+def test_configuration_import_uses_explicit_environment_without_dotenv(monkeypatch, tmp_path):
+    """A fresh import cannot invoke dotenv or inspect/read an environment file."""
+    import builtins
+    import importlib.util
+    from pathlib import Path
+    import sys
+    import plutus.core.config as config_module
+
+    source = Path(config_module.__file__)
+    original_import = builtins.__import__
+    original_exists = Path.exists
+    original_open = Path.open
+
+    def guarded_import(name, *args, **kwargs):
+        if name == "dotenv" or name.startswith("dotenv."):
+            raise AssertionError("Configuration must not import an environment-file loader")
+        return original_import(name, *args, **kwargs)
+
+    def guarded_exists(path):
+        if path.name.startswith(".env"):
+            raise AssertionError("Configuration must not discover environment files")
+        return original_exists(path)
+
+    def guarded_open(path, *args, **kwargs):
+        if path.name.startswith(".env"):
+            raise AssertionError("Configuration must not read environment files")
+        return original_open(path, *args, **kwargs)
+
+    (tmp_path / ".env").write_text("PLUTUS_MODEL=unrequested-file-value\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PLUTUS_MODEL", "explicit-host-model")
+    monkeypatch.setenv("PLUTUS_REQUEST_TIMEOUT", "17")
+    monkeypatch.setenv("PLUTUS_MAX_RETRIES", "0")
+    monkeypatch.setenv("PLUTUS_INTEGRATION_MODE", "true")
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    monkeypatch.setattr(Path, "exists", guarded_exists)
+    monkeypatch.setattr(Path, "open", guarded_open)
+
+    spec = importlib.util.spec_from_file_location("plutus_config_import_check", source)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    settings = module.get_config()
+    assert settings.model == "explicit-host-model"
+    assert settings.request_timeout == 17
+    assert settings.max_retries == 0
+
+
 def test_orchestrator_instantiable_without_key():
     from plutus import PlutusOrchestrator
 

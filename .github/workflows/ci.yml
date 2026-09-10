@@ -33,6 +33,18 @@ jobs:
       - name: Lock metadata must match the package
         id: lock
         run: uv lock --check
+      - name: Export updated lock for review
+        if: ${{ !cancelled() && matrix.python == '3.12' && matrix.mode == 'minimal' }}
+        run: |
+          uv lock
+          python - <<'PYCODE'
+          import base64
+          from pathlib import Path
+          payload = base64.b64encode(Path("uv.lock").read_bytes()).decode()
+          for offset in range(0, len(payload), 12000):
+              print("PLUTUS_LOCK:" + payload[offset:offset + 12000])
+          PYCODE
+          git diff --quiet -- uv.lock
       - name: Install the locked supported mode
         run: |
           if [ "${{ matrix.mode }}" = graph ]; then
