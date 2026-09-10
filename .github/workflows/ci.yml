@@ -1,7 +1,7 @@
 name: Plutus CI
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
 permissions:
   contents: read
@@ -19,24 +19,13 @@ jobs:
         mode: [minimal, graph]
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           version: "0.8.22"
       - run: uv python install ${{ matrix.python }}
       - name: Lock metadata must match the package
         id: lock
         run: uv lock --check
-      - name: Report proposed lock repair
-        if: failure() && steps.lock.outcome == 'failure' && matrix.python == '3.12' && matrix.mode == 'minimal'
-        run: |
-          uv lock
-          python3 - <<'PYLOCK'
-          import base64
-          from pathlib import Path
-          encoded = base64.b64encode(Path('uv.lock').read_bytes()).decode()
-          for offset in range(0, len(encoded), 12000):
-              print('PLUTUS_LOCK:' + encoded[offset:offset + 12000])
-          PYLOCK
       - name: Install the locked supported mode
         run: |
           if [ "${{ matrix.mode }}" = graph ]; then
