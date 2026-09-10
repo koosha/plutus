@@ -15,8 +15,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.12"]
-        mode: [minimal, graph]
+        include:
+          - python: "3.9"
+            mode: minimal
+          - python: "3.10"
+            mode: graph
+          - python: "3.12"
+            mode: minimal
+          - python: "3.12"
+            mode: graph
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -26,6 +33,17 @@ jobs:
       - name: Lock metadata must match the package
         id: lock
         run: uv lock --check
+      - name: Export updated lock for review
+        if: ${{ failure() && steps.lock.outcome == 'failure' && matrix.python == '3.12' && matrix.mode == 'minimal' }}
+        run: |
+          uv lock --upgrade-package langgraph --upgrade-package langchain-core --upgrade-package langgraph-sdk --upgrade-package langgraph-checkpoint --upgrade-package langgraph-prebuilt --upgrade-package langsmith --upgrade-package orjson --upgrade-package ormsgpack
+          python - <<'PY'
+          import base64
+          from pathlib import Path
+          payload = base64.b64encode(Path("uv.lock").read_bytes()).decode()
+          for offset in range(0, len(payload), 12000):
+              print("PLUTUS_LOCK:" + payload[offset:offset + 12000])
+          PY
       - name: Install the locked supported mode
         run: |
           if [ "${{ matrix.mode }}" = graph ]; then
@@ -34,7 +52,11 @@ jobs:
             uv sync --locked --python ${{ matrix.python }} --extra dev
           fi
       - name: Offline contract suite
-        run: uv run --no-sync pytest -q
+        run: |
+          if [ "${{ matrix.mode }}" = graph ]; then
+            uv run --no-sync python -c "from plutus.agents.advanced_orchestrator import LANGGRAPH_AVAILABLE; assert LANGGRAPH_AVAILABLE"
+          fi
+          uv run --no-sync pytest -q
       - name: Build and test installed wheel
         run: |
           uv build --wheel
