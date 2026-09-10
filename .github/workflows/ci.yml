@@ -33,18 +33,6 @@ jobs:
       - name: Lock metadata must match the package
         id: lock
         run: uv lock --check
-      - name: Export updated lock for review
-        if: ${{ !cancelled() && matrix.python == '3.12' && matrix.mode == 'minimal' }}
-        run: |
-          uv lock --upgrade
-          python - <<'PY'
-          import base64
-          from pathlib import Path
-          payload = base64.b64encode(Path("uv.lock").read_bytes()).decode()
-          for offset in range(0, len(payload), 12000):
-              print("PLUTUS_LOCK:" + payload[offset:offset + 12000])
-          PY
-          git diff --quiet -- uv.lock
       - name: Install the locked supported mode
         run: |
           if [ "${{ matrix.mode }}" = graph ]; then
@@ -73,6 +61,21 @@ jobs:
           uv venv --python ${{ matrix.python }} --seed /tmp/plutus-audit
           uv pip install --python /tmp/plutus-audit/bin/python pip-audit==2.9.0
           /tmp/plutus-audit/bin/python -m pip_audit --no-deps --disable-pip -r /tmp/plutus-runtime.txt --format json --output runtime-audit.json
+      - name: Summarize runtime audit
+        if: always()
+        run: |
+          python - <<'PYCODE'
+          import json
+          from pathlib import Path
+          report = Path("runtime-audit.json")
+          if report.exists():
+              data = json.loads(report.read_text())
+              for dep in data.get("dependencies", []):
+                  if dep.get("vulns"):
+                      print(json.dumps({"name": dep["name"], "version": dep["version"],
+                                        "advisories": [{"id": v["id"], "fix_versions": v.get("fix_versions", [])}
+                                                       for v in dep["vulns"]]}))
+          PYCODE
       - name: Preserve runtime audit evidence
         if: always()
         uses: actions/upload-artifact@v4
