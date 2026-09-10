@@ -15,6 +15,7 @@ Design contract (kept deliberately small):
 
 import logging
 import os
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
@@ -35,7 +36,10 @@ MODEL_COST_RATES: Dict[str, Tuple[float, float]] = {
     "gpt-5-mini": (0.25e-6, 2.00e-6),
     "gpt-5": (1.25e-6, 10.00e-6),
 }
-_FALLBACK_RATES = MODEL_COST_RATES[DEFAULT_MODEL]
+# Standard API text rates verified against the official model documentation.
+# https://developers.openai.com/api/docs/models/gpt-5-mini
+PRICING_VERSION = "openai-standard-2026-09-10"
+_MODEL_SNAPSHOT = re.compile(r"^(gpt-5(?:-mini|-nano)?)(?:-\d{4}-\d{2}-\d{2})?$")
 
 
 class LLMError(Exception):
@@ -58,26 +62,32 @@ class LLMCompletion:
     model: str
     input_tokens: int = 0
     output_tokens: int = 0
-    cost: float = 0.0
+    cost: Optional[float] = None
+    pricing_version: Optional[str] = None
 
 
-def cost_for(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Estimated USD cost of one completion for `model`.
-
-    Unknown models price at the default tier's rates — a conservative,
-    documented approximation used only for budget accounting.
-    """
-    rates = _FALLBACK_RATES
-    best_len = -1
-    for prefix, prefix_rates in MODEL_COST_RATES.items():
-        if model.startswith(prefix) and len(prefix) > best_len:
-            rates = prefix_rates
-            best_len = len(prefix)
+def cost_for(model: str, input_tokens: int, output_tokens: int) -> Optional[float]:
+    """Versioned text pricing; unrecognized models have explicitly unknown cost."""
+    match = _MODEL_SNAPSHOT.fullmatch(model)
+    if not match:
+        return None
+    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0
+           for value in (input_tokens, output_tokens)):
+        return None
+    rates = MODEL_COST_RATES[match.group(1)]
     return input_tokens * rates[0] + output_tokens * rates[1]
 
 
 class LLMProvider(ABC):
     """Async completion interface every backing implementation satisfies."""
+
+    def maximum_cost(self, input_tokens: int, max_output_tokens: int,
+                     max_attempts: int = 1) -> Optional[float]:
+        """A provider must declare a supported upper bound before paid work."""
+        return None
+
+    async def aclose(self) -> None:
+        """Release provider-owned clients; stateless implementations need no work."""
 
     @abstractmethod
     async def complete(
@@ -136,6 +146,13 @@ class OpenAIProvider(LLMProvider):
             api_key=key, timeout=timeout, max_retries=max_retries
         )
 
+    def maximum_cost(self, input_tokens, max_output_tokens, max_attempts=1):
+        estimate = cost_for(self.model, input_tokens, max_output_tokens)
+        return estimate * max_attempts if estimate is not None else None
+
+    async def aclose(self):
+        await self._client.close()
+
     @staticmethod
     def is_configured() -> bool:
         """True when a real call could be attempted (key present, SDK importable)."""
@@ -193,5 +210,6 @@ class OpenAIProvider(LLMProvider):
             model=getattr(response, "model", self.model) or self.model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            cost=cost_for(self.model, input_tokens, output_tokens),
+            cost=cost_for(self.model, input_tokens, output_tokens) if usage is not None else None,
+            pricing_version=PRICING_VERSION if usage is not None and cost_for(self.model, input_tokens, output_tokens) is not None else None,
         )

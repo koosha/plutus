@@ -118,7 +118,8 @@ class BaseAgent(ABC):
             max_output_tokens=max_output_tokens or self.config.max_output_tokens,
             temperature=self.config.llm_temperature,
         )
-        self.total_api_cost += completion.cost
+        if completion.cost is not None:
+            self.total_api_cost += completion.cost
         return completion
 
     def parse_json_response(self, content: str) -> Optional[Dict[str, Any]]:

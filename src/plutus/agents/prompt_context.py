@@ -5,7 +5,7 @@ import math
 MAX_PROMPT_BYTES = 24000
 # Priority data must survive large collections that precede it in host input.
 _PRIORITY = ('consent', 'availability', 'data_provenance', 'provenance', 'financial_measurements', 'as_of', 'last_data_sync', 'timestamp',
-             'currency', 'financial_snapshot', 'net_worth', 'monthly_income',
+             'currency', 'financial_snapshot', 'conversation_history', 'net_worth', 'monthly_income',
              'monthly_expenses', 'wealth_health_score', 'account_summary')
 
 

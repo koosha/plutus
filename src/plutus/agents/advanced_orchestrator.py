@@ -173,6 +173,7 @@ class AdvancedOrchestrator(BaseAgent):
         user_id: str,
         session_id: Optional[str] = None,
         user_context: Optional[Dict[str, Any]] = None,
+        output_contract: str = "chat",
     ) -> Dict[str, Any]:
         """
         Process user message through advanced multi-agent workflow.
@@ -208,6 +209,8 @@ class AdvancedOrchestrator(BaseAgent):
             state = await self._build_conversation_state(
                 user_message, user_id, session_id, user_context
             )
+
+            state["output_contract"] = output_contract
 
             # 2. Analyze conversation and determine agent routing
             routing_analysis = await self._analyze_conversation_routing(user_message, state)
@@ -473,11 +476,37 @@ class AdvancedOrchestrator(BaseAgent):
         prompt = self._compose_synthesis_prompt(state, workflow_result)
 
         call_started = datetime.utcnow()
-        completion = await self.call_llm(
-            prompt, system_prompt=ADVISOR_SYSTEM_PROMPT
-        )
+        system_prompt = ADVISOR_SYSTEM_PROMPT
+        if state.get("output_contract") == "brief":
+            system_prompt = ADVISOR_SYSTEM_PROMPT.split("Output contract")[0] + (
+                "Output contract: return only a JSON array of brief cards with string fields "
+                "tone, title, body and action. Return [] if nothing is notable."
+            )
+        completion = await self.call_llm(prompt, system_prompt=system_prompt)
         call_seconds = (datetime.utcnow() - call_started).total_seconds()
+        workflow_result.setdefault("metadata", {})["llm"] = {
+            "model": completion.model, "input_tokens": completion.input_tokens,
+            "output_tokens": completion.output_tokens, "api_cost": completion.cost,
+            "cost_status": "known" if completion.cost is not None else "unknown",
+            "pricing_version": completion.pricing_version,
+        }
 
+        if state.get("output_contract") == "brief":
+            # The host applies the dedicated card schema and policy gates.
+            # Preserve raw output and usage even when that validation rejects it.
+            metadata = dict(workflow_result.get("metadata", {}))
+            metadata["llm"] = {"model": completion.model,
+                "input_tokens": completion.input_tokens, "output_tokens": completion.output_tokens,
+                "api_cost": completion.cost, "cost_status": "known" if completion.cost is not None else "unknown",
+                "pricing_version": completion.pricing_version}
+            brief_text = completion.text
+            try:
+                wrapped = json.loads(brief_text)
+                if isinstance(wrapped, dict) and isinstance(wrapped.get("response"), str):
+                    brief_text = wrapped["response"]
+            except (ValueError, TypeError):
+                pass
+            return {**workflow_result, "success": True, "response": brief_text, "metadata": metadata}
         parsed = self.parse_json_response(completion.text)
 
         response_text = ""
@@ -488,14 +517,12 @@ class AdvancedOrchestrator(BaseAgent):
             raw_response = parsed.get("response")
             if isinstance(raw_response, str):
                 response_text = raw_response.strip()
-            insights = [
-                str(item) for item in parsed.get("insights") or [] if str(item).strip()
-            ][:5]
-            recommendations = [
-                str(item)
-                for item in parsed.get("recommendations") or []
-                if str(item).strip()
-            ][:5]
+            for key in ("insights", "recommendations"):
+                values = parsed.get(key, [])
+                if not isinstance(values, list) or len(values) > 5 or any(not isinstance(item, str) or len(item) > 2000 for item in values):
+                    raise LLMResponseError("LLM returned invalid list fields")
+            insights = parsed.get("insights", [])
+            recommendations = parsed.get("recommendations", [])
             try:
                 confidence = min(1.0, max(0.0, float(parsed.get("confidence", 0.5))))
                 if not math.isfinite(float(parsed.get("confidence", 0.5))):
@@ -536,6 +563,8 @@ class AdvancedOrchestrator(BaseAgent):
             "input_tokens": completion.input_tokens,
             "output_tokens": completion.output_tokens,
             "api_cost": completion.cost,
+            "cost_status": "known" if completion.cost is not None else "unknown",
+            "pricing_version": completion.pricing_version,
             "parsed_contract": bool(parsed),
         }
         metadata["confidence"] = confidence

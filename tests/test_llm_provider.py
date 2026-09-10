@@ -63,10 +63,9 @@ class TestCostTable:
     def test_dated_snapshot_prices_like_family(self):
         assert cost_for("gpt-5-mini-2026-01-01", 1_000_000, 0) == pytest.approx(0.25)
 
-    def test_unknown_model_uses_default_tier(self):
-        assert cost_for("some-future-model", 1_000_000, 1_000_000) == pytest.approx(
-            cost_for(DEFAULT_MODEL, 1_000_000, 1_000_000)
-        )
+    def test_unknown_model_has_explicitly_unknown_cost(self):
+        assert cost_for("some-future-model", 1_000_000, 1_000_000) is None
+        assert cost_for("gpt-5-premium", 1_000_000, 1_000_000) is None
 
 
 def _mock_sdk_response(content="hello", prompt_tokens=10, completion_tokens=4):

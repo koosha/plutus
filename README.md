@@ -50,3 +50,13 @@ CI also runs this example in an isolated wheel environment outside the source ch
 Unit and integration tests use injected providers and synthetic data. They verify contracts and failure handling without paid model calls. They do not establish live-model answer quality, production availability, or suitability of financial advice. Host integration and opt-in provider evaluations must record their actual modes and model versions.
 
 Conversation history belongs to the host. The historical standalone SQLite memory service is not part of the supported runtime. Project changes use `plutus/` branches and the repository owner's commit identity.
+
+
+## Compatibility and storage
+
+The public orchestrator imports remain supported. The unused internal SQLite
+`services.memory_service` and unused prompt/validation mixins were retired in
+1.1.0. Their default construction was already broken and they had no active
+package consumer. Integrations must persist conversations in their host and
+pass bounded `conversation_history` with the current authorization provenance.
+No database file is created by importing or constructing Plutus.

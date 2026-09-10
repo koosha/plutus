@@ -22,13 +22,13 @@ import re
 
 from .base_agent import BaseAgent
 from .boundaries import failure, number, measurement
-from .mixins import TextParsingMixin, ResponseFormattingMixin, ClaudePromptMixin
+from .mixins import TextParsingMixin, ResponseFormattingMixin
 from ..models.state import ConversationState
 
 logger = logging.getLogger(__name__)
 
 
-class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin, ClaudePromptMixin):
+class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin):
     """
     Advanced agent for extracting and managing financial goals from conversations.
     

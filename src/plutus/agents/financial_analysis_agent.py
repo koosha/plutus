@@ -11,10 +11,10 @@ from typing import Dict, List, Any, Optional
 
 from .base_agent import BaseAgent
 from .boundaries import measurement, number, known_accounts, is_liability, is_liquid
-from .mixins import FinancialCalculationMixin, ResponseFormattingMixin, ClaudePromptMixin
+from .mixins import FinancialCalculationMixin, ResponseFormattingMixin
 from ..models.state import ConversationState
 
-class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseFormattingMixin, ClaudePromptMixin):
+class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseFormattingMixin):
     """
     Financial Analysis Agent
     

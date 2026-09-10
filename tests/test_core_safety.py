@@ -372,3 +372,22 @@ async def test_liability_types_and_depository_subtypes_follow_host_contract():
 def test_extremely_large_limit_is_a_configuration_error():
     with pytest.raises(ValueError):
         PlutusConfig(max_retries=10**1000)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text', ['[]', '[{"tone":"amber","title":"Review","body":"Review finances","action":"Review"}]', '{"response":"[]"}'])
+async def test_explicit_brief_contract_preserves_cards_and_usage(text):
+    from conftest import FakeProvider
+    provider = FakeProvider(raw_text=text)
+    result = await AdvancedOrchestrator(provider=provider).process_message('brief', 'person', user_context={}, output_contract='brief')
+    assert result['success'] is True
+    assert isinstance(json.loads(result['response']), list)
+    assert result['metadata']['llm']['api_cost'] == .000125
+
+
+@pytest.mark.asyncio
+async def test_chat_contract_rejection_preserves_reported_usage():
+    from conftest import FakeProvider
+    result = await AdvancedOrchestrator(provider=FakeProvider(raw_text='{"response":"text","insights":"bad"}')).process_message('hello', 'person', user_context={})
+    assert result['success'] is False
+    assert result['metadata']['llm']['api_cost'] == .000125
