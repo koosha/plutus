@@ -1,0 +1,58 @@
+name: Plutus CI
+on:
+  push:
+    branches: [master]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: plutus-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  package:
+    name: Package (${{ matrix.python }}, ${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12"]
+        mode: [minimal, graph]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.22"
+      - run: uv python install ${{ matrix.python }}
+      - name: Lock metadata must match the package
+        id: lock
+        run: uv lock --check
+      - name: Report proposed lock repair
+        if: failure() && steps.lock.outcome == 'failure' && matrix.python == '3.12' && matrix.mode == 'minimal'
+        run: |
+          uv lock
+          python3 - <<'PYLOCK'
+          import base64
+          from pathlib import Path
+          encoded = base64.b64encode(Path('uv.lock').read_bytes()).decode()
+          for offset in range(0, len(encoded), 12000):
+              print('PLUTUS_LOCK:' + encoded[offset:offset + 12000])
+          PYLOCK
+      - name: Install the locked supported mode
+        run: |
+          if [ "${{ matrix.mode }}" = graph ]; then
+            uv sync --locked --python ${{ matrix.python }} --extra dev --extra langgraph
+          else
+            uv sync --locked --python ${{ matrix.python }} --extra dev
+          fi
+      - name: Offline contract suite
+        run: uv run --no-sync pytest -q
+      - name: Build and test installed wheel
+        run: |
+          uv build --wheel
+          uv venv --python ${{ matrix.python }} /tmp/plutus-wheel
+          extra=""
+          if [ "${{ matrix.mode }}" = graph ]; then extra="--extra langgraph"; fi
+          uv export --locked --no-dev --no-emit-project --no-hashes $extra --format requirements-txt --output-file /tmp/plutus-runtime.txt
+          uv pip install --python /tmp/plutus-wheel/bin/python -r /tmp/plutus-runtime.txt dist/*.whl
+          cd /tmp
+          /tmp/plutus-wheel/bin/python -I "$GITHUB_WORKSPACE/examples/offline_chat.py"

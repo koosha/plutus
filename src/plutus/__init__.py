@@ -13,7 +13,7 @@ Core Components:
 - Goal tracking and recommendations
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Wealthify Team"
 
 from .core.config import PlutusConfig, set_config

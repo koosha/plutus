@@ -1,170 +1,52 @@
-# Plutus 🧠
+# Plutus
 
-**AI-powered wealth management brain for financial advisory applications**
+Plutus provides financial analysis and educational response synthesis for Wealthify. The host supplies authorized financial context and owns authentication, consent, persistence, and spending controls. Domain specialists organize findings before an injected asynchronous provider produces a response.
 
-Plutus is a sophisticated multi-agent system that provides personalized financial advice using Claude AI and advanced orchestration.
+## Install
 
-## ✨ Features
-
-- 🤖 **Multi-Agent Architecture**: Specialized agents for financial analysis, goal extraction, risk assessment, and recommendations
-- 🧠 **Claude AI Integration**: Advanced reasoning and financial analysis capabilities
-- 📊 **Comprehensive Testing**: 100-question test suite across multiple financial scenarios
-
-## 🚀 Quick Start
+Python 3.9 or newer is supported. Use the exact reviewed repository revision or a wheel built from that revision:
 
 ```bash
-# Install dependencies with UV
-uv sync
-
-# Run comprehensive test
-uv run python test_plutus.py
-
-# Import in your application
-from plutus import PlutusOrchestrator, PlutusConfig
-
-config = PlutusConfig()
-orchestrator = PlutusOrchestrator()
-result = await orchestrator.process({
-    "user_message": "How much should I save for retirement?",
-    "user_id": "user123",
-    "user_context": {...}
-})
-```
-
-## 🏗️ Architecture
-
-- **Advanced Orchestrator**: Coordinates multiple specialized agents
-- **Goal Extraction Agent**: Understands user financial objectives  
-- **Risk Assessment Agent**: Evaluates risk tolerance and factors
-- **Recommendation Agent**: Generates personalized financial advice
-- **Financial Analysis Agent**: Processes financial data and metrics
-
-## 📦 Installation
-
-Requires Python 3.9+ and UV package manager:
-
-```bash
-pip install uv
-git clone https://github.com/your-org/plutus.git
+git clone https://github.com/koosha/plutus.git
 cd plutus
-uv sync
+python -m pip install .
 ```
 
-## 🧪 Testing
-
-Run the comprehensive test suite:
+For development, install uv and use the checked-in lock:
 
 ```bash
-uv run python test_plutus.py
+uv sync --locked --extra dev
+uv run --no-sync pytest -q
+uv build --wheel
 ```
 
-Tests include:
-- Production readiness validation
-- 100-question scenarios across 5 user profiles
-- Multi-agent coordination verification
-- Live response monitoring
+The optional graph installation is tested separately with `uv sync --locked --extra dev --extra langgraph`. Both supported installations must execute the same selected analyses. A missing optional dependency must not change financial conclusions.
 
-## Setup
+## Use
 
-1. Create and activate virtual environment:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+```python
+from plutus import PlutusOrchestrator
 
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. Copy and configure environment variables:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your API keys and configuration
-   ```
-
-4. Run the application:
-   ```bash
-   uvicorn src.main:app --reload
-   ```
-
-## Development
-
-- **Code formatting**: `black src tests`
-- **Linting**: `ruff check src tests`
-- **Type checking**: `mypy src`
-- **Testing**: `pytest tests/`
-
-## 🤖 LangGraph Multi-Agent Architecture
-
-Plutus implements a sophisticated multi-agent system using LangGraph that coordinates 5 specialized agents to provide comprehensive financial coaching.
-
-
-### Agent Workflow Example
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Orchestrator
-    participant FinAgent as Financial Agent
-    participant GoalAgent as Goal Agent
-    participant RiskAgent as Risk Agent
-    participant RecAgent as Recommendation Agent
-    participant Memory as Memory Service
-    
-    User->>Orchestrator: "Help me optimize my finances"
-    Orchestrator->>Orchestrator: Analyze routing needs
-    
-    par Parallel Agent Execution
-        Orchestrator->>FinAgent: Analyze financial health
-        Orchestrator->>GoalAgent: Extract any goals mentioned
-        Orchestrator->>RiskAgent: Assess risk profile
-    end
-    
-    FinAgent-->>Orchestrator: Financial analysis results
-    GoalAgent-->>Orchestrator: Goal extraction results
-    RiskAgent-->>Orchestrator: Risk assessment results
-    
-    Orchestrator->>RecAgent: Generate recommendations (with all context)
-    RecAgent-->>Orchestrator: Personalized recommendations
-    
-    Orchestrator->>Memory: Store conversation & insights
-    Orchestrator->>User: Synthesized comprehensive response
+orchestrator = PlutusOrchestrator(provider=your_provider)
+result = await orchestrator.process_message(
+    "Help me understand my cash flow",
+    user_id="example-user",
+    user_context=authorized_context,
+)
 ```
 
-### Specialized Agents
+`provider` implements `plutus.llm.LLMProvider`. Production may configure `OPENAI_API_KEY` and `PLUTUS_MODEL`; no credentials are needed to import the package or run the tests. A missing provider produces a typed unavailable result. This library does not start a web server or load sample financial data at runtime.
 
-| Agent | Purpose | Key Capabilities |
-|-------|---------|------------------|
-| **🏦 Financial Analysis** | Analyzes user's financial health and performance | Net worth calculation, cash flow analysis, wealth scoring |
-| **🎯 Goal Extraction** | Identifies and manages financial goals from conversations | NLP goal detection, progress tracking, timeline analysis |
-| **⚠️ Risk Assessment** | Evaluates financial risk across multiple dimensions | Portfolio risk, income stability, debt analysis |
-| **💡 Recommendation** | Generates personalized financial advice and action plans | Investment strategies, debt management, tax optimization |
-| **🧠 Memory Service** | Maintains conversation context and learns user preferences | Session continuity, insight extraction, progress tracking |
+Run the complete offline example after installation:
 
-### Conversation Flow Examples
-
-#### Simple Query → Single Agent
-```
-User: "What's my net worth?"
-→ Routes to: Financial Analysis Agent
-→ Response: Detailed net worth breakdown with insights
+```bash
+python examples/offline_chat.py
 ```
 
-#### Complex Query → Multiple Agents
-```
-User: "I want to buy a house and optimize my investments"
-→ Routes to: Goal Extraction + Risk Assessment + Recommendation Agents
-→ Response: House purchase strategy + investment optimization plan
-```
+CI also runs this example in an isolated wheel environment outside the source checkout, ensuring that source-path injection cannot hide packaging omissions. The public `plutus.PlutusOrchestrator` and historical `plutus.agents.orchestrator.PlutusOrchestrator` imports remain supported.
 
-#### Learning Over Time
-```
-Session 1: User mentions retirement goals
-→ Memory stores: User is focused on long-term planning
+## Verification boundaries
 
-Session 2: "What should I invest in?"
-→ Memory recalls: Previous retirement focus
-→ Response: Retirement-optimized investment recommendations
-```
+Unit and integration tests use injected providers and synthetic data. They verify contracts and failure handling without paid model calls. They do not establish live-model answer quality, production availability, or suitability of financial advice. Host integration and opt-in provider evaluations must record their actual modes and model versions.
 
+Conversation history belongs to the host. The historical standalone SQLite memory service is not part of the supported runtime. Project changes use `plutus/` branches and the repository owner's commit identity.
