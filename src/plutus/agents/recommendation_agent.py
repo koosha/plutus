@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 import json
 
 from .base_agent import BaseAgent
+from .boundaries import failure, number, measurement, known_accounts, is_liability, is_liquid
 from ..models.state import ConversationState, UserContext
 from ..core.config import get_config
 
@@ -129,7 +130,8 @@ class RecommendationAgent(BaseAgent):
                     "recommendation_needs": recommendation_needs,
                     "total_recommendations": len(recommendations),
                     "high_priority_count": len([r for r in prioritized_recommendations if r["priority"] == "high"]),
-                    "categories": list(set(r["category"] for r in recommendations))
+                    "categories": sorted(set(r["category"] for r in recommendations)),
+                    "policy_version": "recommendation-heuristics-v1"
                 },
                 "recommendations": prioritized_recommendations,
                 "action_plans": action_plans,
@@ -141,8 +143,8 @@ class RecommendationAgent(BaseAgent):
             return agent_result
             
         except Exception as e:
-            logger.error(f"❌ Recommendation Agent error: {e}")
-            return self._create_error_response(f"Recommendation generation failed: {str(e)}")
+            logger.error("Specialist failed: category=%s", type(e).__name__)
+            return self._create_error_response("analysis_failed")
     
     async def _analyze_recommendation_needs(self, message: str, user_context: Dict) -> Dict[str, Any]:
         """Analyze what types of recommendations the user needs"""
@@ -183,45 +185,29 @@ class RecommendationAgent(BaseAgent):
         if any(word in message_lower for word in ["goal", "goals", "plan", "planning"]):
             needs["goal_planning"] = True
         
-        # Analyze user context for implicit needs
-        net_worth = user_context.get("net_worth", 0)
-        monthly_income = user_context.get("monthly_income", 0)
-        monthly_expenses = user_context.get("monthly_expenses", 0)
-        
-        # Emergency fund analysis
-        emergency_fund_balance = self._calculate_emergency_fund_balance(user_context)
-        recommended_emergency_fund = monthly_expenses * 6
-        if emergency_fund_balance < recommended_emergency_fund:
+        explicit = {key: value for key, value in needs.items() if value}
+        income = measurement(user_context, "monthly_income")
+        expenses = measurement(user_context, "monthly_expenses")
+        net_worth = measurement(user_context, "net_worth")
+        accounts = known_accounts(user_context)
+        emergency = self._calculate_emergency_fund_balance(user_context)
+        if emergency is not None and expenses is not None and emergency < expenses * 6:
             needs["emergency_fund"] = True
-        
-        # Investment analysis
-        investment_accounts = [acc for acc in user_context.get("accounts", []) if acc.get("type") == "investment"]
-        total_investment = sum(acc.get("balance", 0) for acc in investment_accounts)
-        if total_investment < net_worth * 0.1:  # Less than 10% invested
-            needs["investment"] = True
-        
-        # Debt analysis
-        debt_accounts = [acc for acc in user_context.get("accounts", []) if acc.get("balance", 0) < 0]
-        total_debt = sum(abs(acc.get("balance", 0)) for acc in debt_accounts)
-        if total_debt > monthly_income * 3:  # More than 3 months of income in debt
-            needs["debt_management"] = True
-        
-        # Retirement analysis
-        age = user_context.get("age", 30)
-        retirement_balance = sum(
-            acc.get("balance", 0) for acc in user_context.get("accounts", [])
-            if "401k" in acc.get("name", "").lower() or "ira" in acc.get("name", "").lower()
-        )
-        expected_retirement_balance = monthly_income * 12 * (age - 22) * 0.15  # 15% savings rate
-        if retirement_balance < expected_retirement_balance * 0.5:
-            needs["retirement"] = True
-        
-        return {
-            "explicit_needs": {k: v for k, v in needs.items() if v and any(word in message_lower for word in ["invest", "debt", "budget", "emergency", "retirement", "tax", "goal"])},
-            "implicit_needs": {k: v for k, v in needs.items() if v},
-            "priority_order": self._prioritize_needs(needs, user_context)
-        }
-    
+        if accounts is not None:
+            invested = sum(item["balance"] for item in accounts if item.get("type") == "investment")
+            debt = sum(abs(item["balance"]) for item in accounts if is_liability(item))
+            if net_worth is not None and invested < net_worth * 0.1:
+                needs["investment"] = True
+            if income is not None and debt > income * 3:
+                needs["debt_management"] = True
+            age = number(user_context.get("age"))
+            if age is not None and income is not None:
+                retirement = sum(item["balance"] for item in accounts if "401k" in item.get("name", "").lower() or "ira" in item.get("name", "").lower())
+                if retirement < income * 12 * max(0, age - 22) * 0.15 * 0.5:
+                    needs["retirement"] = True
+        return {"explicit_needs": explicit, "implicit_needs": {k: v for k, v in needs.items() if v},
+                "priority_order": self._prioritize_needs(needs, user_context)}
+
     async def _generate_recommendations(self, needs: Dict, user_context: Dict) -> List[Dict[str, Any]]:
         """Generate specific recommendations based on identified needs"""
         
@@ -261,12 +247,15 @@ class RecommendationAgent(BaseAgent):
     async def _generate_emergency_fund_recommendations(self, user_context: Dict) -> List[Dict[str, Any]]:
         """Generate emergency fund recommendations"""
         
+        if measurement(user_context, "monthly_expenses") is None or self._calculate_emergency_fund_balance(user_context) is None:
+            return []
+
         recommendations = []
-        monthly_expenses = user_context.get("monthly_expenses", 3000)
+        monthly_expenses = measurement(user_context, "monthly_expenses")
         current_emergency_fund = self._calculate_emergency_fund_balance(user_context)
         
         # Determine appropriate emergency fund size
-        job_stability = user_context.get("job_stability", "stable_job")
+        job_stability = user_context.get("job_stability")
         target_months = self.emergency_fund_guidelines.get(job_stability, {"months": 6})["months"]
         target_amount = monthly_expenses * target_months
         
@@ -293,20 +282,23 @@ class RecommendationAgent(BaseAgent):
     async def _generate_debt_recommendations(self, user_context: Dict) -> List[Dict[str, Any]]:
         """Generate debt management recommendations"""
         
+        if known_accounts(user_context) is None or measurement(user_context, "monthly_income") is None:
+            return []
+
         recommendations = []
         accounts = user_context.get("accounts", [])
-        debt_accounts = [acc for acc in accounts if acc.get("balance", 0) < 0]
+        debt_accounts = [acc for acc in accounts if is_liability(acc)]
         
         if not debt_accounts:
             return recommendations
         
         total_debt = sum(abs(acc.get("balance", 0)) for acc in debt_accounts)
-        monthly_income = user_context.get("monthly_income", 5000)
+        monthly_income = measurement(user_context, "monthly_income")
         
         # High interest debt check
         high_interest_debt = [
             acc for acc in debt_accounts 
-            if acc.get("interest_rate", 0) > 15  # Credit cards typically
+            if number(acc.get("interest_rate")) is not None and acc["interest_rate"] > 15  # Credit cards typically
         ]
         
         if high_interest_debt:
@@ -342,11 +334,14 @@ class RecommendationAgent(BaseAgent):
     async def _generate_investment_recommendations(self, user_context: Dict) -> List[Dict[str, Any]]:
         """Generate investment recommendations"""
         
+        if known_accounts(user_context) is None or measurement(user_context, "monthly_income") is None or number(user_context.get("age")) is None or user_context.get("risk_tolerance") not in self.allocation_models:
+            return []
+
         recommendations = []
-        age = user_context.get("age", 30)
-        risk_tolerance = user_context.get("risk_tolerance", "moderate")
-        monthly_income = user_context.get("monthly_income", 5000)
-        net_worth = user_context.get("net_worth", 0)
+        age = number(user_context.get("age"))
+        risk_tolerance = user_context.get("risk_tolerance")
+        monthly_income = measurement(user_context, "monthly_income")
+        net_worth = measurement(user_context, "net_worth")
         
         # Investment allocation recommendation
         allocation = self.allocation_models.get(risk_tolerance, self.allocation_models["moderate"])
@@ -389,9 +384,12 @@ class RecommendationAgent(BaseAgent):
     async def _generate_retirement_recommendations(self, user_context: Dict) -> List[Dict[str, Any]]:
         """Generate retirement savings recommendations"""
         
+        if known_accounts(user_context) is None or measurement(user_context, "monthly_income") is None or number(user_context.get("age")) is None:
+            return []
+
         recommendations = []
-        age = user_context.get("age", 30)
-        monthly_income = user_context.get("monthly_income", 5000)
+        age = number(user_context.get("age"))
+        monthly_income = measurement(user_context, "monthly_income")
         annual_income = monthly_income * 12
         
         # Find retirement accounts
@@ -423,10 +421,10 @@ class RecommendationAgent(BaseAgent):
             })
         
         # 401(k) match optimization
-        employer_match = user_context.get("employer_401k_match", 0)
-        current_401k_contribution = user_context.get("current_401k_contribution", 0)
+        employer_match = number(user_context.get("employer_401k_match"))
+        current_401k_contribution = number(user_context.get("current_401k_contribution"))
         
-        if employer_match > 0 and current_401k_contribution < employer_match:
+        if employer_match is not None and current_401k_contribution is not None and employer_match > 0 and current_401k_contribution < employer_match:
             recommendations.append({
                 "id": "maximize_employer_match",
                 "category": "retirement",
@@ -445,9 +443,12 @@ class RecommendationAgent(BaseAgent):
     async def _generate_budgeting_recommendations(self, user_context: Dict) -> List[Dict[str, Any]]:
         """Generate budgeting and expense optimization recommendations"""
         
+        if measurement(user_context, "monthly_income") is None or measurement(user_context, "monthly_income") <= 0 or measurement(user_context, "monthly_expenses") is None:
+            return []
+
         recommendations = []
-        monthly_income = user_context.get("monthly_income", 5000)
-        monthly_expenses = user_context.get("monthly_expenses", 4000)
+        monthly_income = measurement(user_context, "monthly_income")
+        monthly_expenses = measurement(user_context, "monthly_expenses")
         
         savings_rate = (monthly_income - monthly_expenses) / monthly_income if monthly_income > 0 else 0
         
@@ -515,15 +516,15 @@ class RecommendationAgent(BaseAgent):
         else:
             # Analyze existing goals
             for goal in goals:
-                target_amount = goal.get("target_amount", 0)
-                current_amount = goal.get("current_amount", 0)
+                target_amount = number(goal.get("target_amount"))
+                current_amount = number(goal.get("current_amount"))
                 target_date = goal.get("target_date")
                 
-                if target_date and target_amount > current_amount:
+                if target_date and target_amount is not None and current_amount is not None and target_amount > current_amount:
                     # Calculate if on track
                     from datetime import datetime
                     target_datetime = datetime.fromisoformat(target_date.replace("Z", "+00:00"))
-                    months_remaining = max(1, (target_datetime - datetime.now()).days / 30.44)
+                    months_remaining = max(1, (target_datetime - datetime.now(tz=target_datetime.tzinfo)).days / 30.44)
                     
                     needed_monthly = (target_amount - current_amount) / months_remaining
                     
@@ -547,35 +548,12 @@ class RecommendationAgent(BaseAgent):
     async def _generate_tax_recommendations(self, user_context: Dict) -> List[Dict[str, Any]]:
         """Generate tax optimization recommendations"""
         
-        recommendations = []
-        annual_income = user_context.get("monthly_income", 5000) * 12
-        
-        # Tax-advantaged account recommendations
-        retirement_contribution = user_context.get("current_401k_contribution", 0) * annual_income
-        max_401k_contribution = 22500  # 2023 limit
-        
-        if retirement_contribution < max_401k_contribution:
-            additional_contribution = min(
-                max_401k_contribution - retirement_contribution,
-                annual_income * 0.10  # Don't recommend more than 10% additional
-            )
-            
-            tax_savings = additional_contribution * 0.22  # Assume 22% tax bracket
-            
-            recommendations.append({
-                "id": "maximize_401k_tax_benefit",
-                "category": "tax_optimization",
-                "priority": "medium",
-                "title": "Maximize Tax-Advantaged Savings",
-                "description": f"Increase 401(k) contribution for ${tax_savings:,.0f} annual tax savings",
-                "additional_contribution": additional_contribution,
-                "tax_savings": tax_savings,
-                "reasoning": "Pre-tax contributions reduce current taxable income",
-                "specific_action": f"Increase 401(k) contribution by ${additional_contribution/12:,.0f}/month"
-            })
-        
-        return recommendations
-    
+        return [{"id": "review_tax_advantaged_savings", "category": "tax_optimization",
+                 "priority": "medium", "title": "Review Tax-Advantaged Savings",
+                 "description": "Tax treatment and contribution limits depend on the tax year, eligibility and jurisdiction.",
+                 "reasoning": "Verified tax details are needed before estimating savings.",
+                 "specific_action": "Review current rules with a qualified tax professional."}]
+
     async def _prioritize_recommendations(self, recommendations: List[Dict], user_context: Dict) -> List[Dict[str, Any]]:
         """Prioritize recommendations based on user context and impact"""
         
@@ -593,11 +571,11 @@ class RecommendationAgent(BaseAgent):
             
             # Category-based adjustments
             category = rec["category"]
-            if category == "emergency_fund" and user_context.get("net_worth", 0) < 10000:
+            if category == "emergency_fund" and measurement(user_context, "net_worth") is not None and measurement(user_context, "net_worth") < 10000:
                 score += 50  # Emergency fund is critical for low net worth
             elif category == "debt_management" and "high_interest" in rec.get("id", ""):
                 score += 40  # High interest debt is urgent
-            elif category == "retirement" and user_context.get("age", 30) < 35:
+            elif category == "retirement" and number(user_context.get("age")) is not None and number(user_context.get("age")) < 35:
                 score += 30  # Retirement savings more important when young
             
             # Impact-based adjustments
@@ -688,7 +666,7 @@ class RecommendationAgent(BaseAgent):
         """Generate natural language response with recommendations"""
         
         if not recommendations:
-            return "I've analyzed your financial situation and you're doing well overall. Keep up the good work with your current financial habits!"
+            return "More verified financial context is needed before making specific recommendations."
         
         response_parts = []
         
@@ -720,10 +698,12 @@ class RecommendationAgent(BaseAgent):
     # Helper methods
     def _calculate_emergency_fund_balance(self, user_context: Dict) -> float:
         """Calculate current emergency fund balance"""
-        accounts = user_context.get("accounts", [])
+        accounts = known_accounts(user_context)
+        if accounts is None:
+            return None
         emergency_accounts = [
             acc for acc in accounts
-            if acc.get("type") in ["savings", "checking"] and 
+            if is_liquid(acc) and
             "emergency" in acc.get("name", "").lower()
         ]
         
@@ -731,7 +711,7 @@ class RecommendationAgent(BaseAgent):
             return sum(acc.get("balance", 0) for acc in emergency_accounts)
         
         # If no dedicated emergency fund, assume savings accounts
-        savings_accounts = [acc for acc in accounts if acc.get("type") == "savings"]
+        savings_accounts = [acc for acc in accounts if acc.get("type") == "savings" or acc.get("subtype") == "savings"]
         return sum(acc.get("balance", 0) for acc in savings_accounts)
     
     def _analyze_spending_patterns(self, transactions: List[Dict]) -> Dict[str, float]:
@@ -739,7 +719,9 @@ class RecommendationAgent(BaseAgent):
         spending_by_category = {}
         
         for transaction in transactions:
-            amount = transaction.get("amount", 0)
+            amount = number(transaction.get("amount"))
+            if amount is None or transaction.get("currency") != "USD":
+                continue
             category = transaction.get("category", "other")
             
             if amount < 0:  # Expenses
@@ -779,7 +761,7 @@ class RecommendationAgent(BaseAgent):
             "agent_name": self.agent_name,
             "agent_type": self.agent_type,
             "success": False,
-            "error": error_message,
+            **failure(),
             "response": "I encountered an issue while generating recommendations. Please try again.",
             "processing_time": 0.0,
             "timestamp": datetime.utcnow().isoformat()

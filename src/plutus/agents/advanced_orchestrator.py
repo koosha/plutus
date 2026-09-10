@@ -20,20 +20,21 @@ import asyncio
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 import json
+import math
 
 # LangGraph imports
 try:
     from langgraph.graph import StateGraph, END
-    from langgraph.checkpoint.sqlite import SqliteSaver
     LANGGRAPH_AVAILABLE = True
 except ImportError:
     logging.warning("LangGraph not available - using simplified orchestration")
     StateGraph = None
     END = None
-    SqliteSaver = None
     LANGGRAPH_AVAILABLE = False
 
 from .base_agent import BaseAgent
+from .boundaries import failure
+from .prompt_context import compose_prompt
 from .financial_analysis_agent import FinancialAnalysisAgent
 from .goal_extraction_agent import GoalExtractionAgent
 from .recommendation_agent import RecommendationAgent
@@ -59,6 +60,7 @@ ADVISOR_SYSTEM_PROMPT = """You are Plutus, the AI financial guide inside the Wea
 
 Strict scope and safety rules:
 - Provide educational, general financial information grounded ONLY in the user data supplied in the request. Do not invent numbers that are not present; say plainly when data is missing.
+- Missing, withheld, failed or omitted context is unknown, never zero. Respect availability/provenance and prompt_metadata; heuristic findings are limited to their stated evidence and policy.
 - Do NOT give individualized investment advice: never recommend buying, selling, or holding any specific security, fund, or asset. Discuss categories, trade-offs, and widely accepted principles instead.
 - Never claim to execute trades, move money, open or close accounts, or take any action. You cannot take actions.
 - For decisions with tax, legal, or large financial consequences, remind the user to consult a licensed professional.
@@ -187,6 +189,7 @@ class AdvancedOrchestrator(BaseAgent):
             Comprehensive response from coordinated agents
         """
         
+        result = None
         try:
             logger.info(f"Advanced Orchestrator processing message for user {user_id}")
 
@@ -242,14 +245,14 @@ class AdvancedOrchestrator(BaseAgent):
             return result
 
         except LLMNotConfiguredError as e:
-            logger.warning(f"Advanced Orchestrator: LLM not configured: {e}")
-            return self._create_error_response(str(e), error_type="llm_not_configured")
+            logger.warning("Response provider is not configured")
+            return self._create_error_response("provider_failed", error_type="llm_not_configured", workflow_result=result)
         except LLMError as e:
-            logger.error(f"Advanced Orchestrator: LLM call failed: {e}")
-            return self._create_error_response(str(e), error_type="llm_error")
+            logger.error("Response provider failed: category=%s", type(e).__name__)
+            return self._create_error_response("provider_failed", error_type="llm_error", workflow_result=result)
         except Exception as e:
-            logger.error(f"Advanced Orchestrator error: {e}")
-            return self._create_error_response(f"Advanced orchestration failed: {str(e)}")
+            logger.error("Orchestration failed: category=%s", type(e).__name__)
+            return self._create_error_response("analysis_failed", workflow_result=result)
     
     async def _build_conversation_state(
         self,
@@ -348,169 +351,70 @@ class AdvancedOrchestrator(BaseAgent):
         return analysis
     
     def _build_langgraph_workflow(self) -> Optional[Any]:
-        """Build LangGraph workflow for advanced orchestration"""
-        
+        """The optional graph consumes exactly the same execution plan."""
         if not LANGGRAPH_AVAILABLE:
             return None
-        
-        try:
-            # Create state graph
-            workflow = StateGraph(dict)  # Use dict as state type for flexibility
-            
-            # Add agent nodes
-            workflow.add_node("analyze_routing", self._langgraph_analyze_routing)
-            workflow.add_node("financial_analysis", self._langgraph_financial_analysis)
-            workflow.add_node("goal_extraction", self._langgraph_goal_extraction)
-            workflow.add_node("risk_assessment", self._langgraph_risk_assessment)
-            workflow.add_node("generate_recommendations", self._langgraph_generate_recommendations)
-            workflow.add_node("synthesize_results", self._langgraph_synthesize_results)
-            
-            # Set entry point
-            workflow.set_entry_point("analyze_routing")
-            
-            # Add conditional routing
-            workflow.add_conditional_edges(
-                "analyze_routing",
-                self._langgraph_route_conversation,
-                {
-                    "financial_only": "financial_analysis",
-                    "goal_only": "goal_extraction", 
-                    "risk_only": "risk_assessment",
-                    "financial_and_risk": "financial_analysis",
-                    "comprehensive": "financial_analysis",
-                    "end": END
-                }
-            )
-            
-            # Add edges for complex workflows
-            workflow.add_edge("financial_analysis", "synthesize_results")
-            workflow.add_edge("goal_extraction", "generate_recommendations")
-            workflow.add_edge("risk_assessment", "generate_recommendations")
-            workflow.add_edge("generate_recommendations", "synthesize_results")
-            workflow.add_edge("synthesize_results", END)
-            
-            # Compile workflow
-            compiled_workflow = workflow.compile()
-            logger.info("✅ LangGraph workflow compiled successfully")
-            return compiled_workflow
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to build LangGraph workflow: {e}")
-            return None
-    
-    async def _execute_langgraph_workflow(
-        self, 
-        state: ConversationState, 
-        routing_analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Execute LangGraph workflow"""
-        
-        try:
-            # Prepare state for LangGraph
-            graph_state = {
-                **state,
-                "routing_analysis": routing_analysis,
-                "agent_results": [],
-                "final_response": ""
-            }
-            
-            # Run workflow
-            result = await self.workflow.ainvoke(graph_state)
-            
-            # Extract results
-            return {
-                "success": True,
-                "response": result.get("final_response", ""),
-                "metadata": {
-                    **state.get("metadata", {}),
-                    "workflow_type": "langgraph",
-                    "agents_used": [r.get("agent_name") for r in result.get("agent_results", [])],
-                    "routing_analysis": routing_analysis
-                },
-                "agent_results": result.get("agent_results", []),
-                "routing_decisions": result.get("routing_decisions", [])
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ LangGraph workflow execution failed: {e}")
-            # Fallback to simple workflow
-            return await self._execute_fallback_workflow(state, routing_analysis)
-    
-    async def _execute_fallback_workflow(
-        self, 
-        state: ConversationState, 
-        routing_analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Execute fallback workflow when LangGraph is not available"""
-        
-        agents_to_run = routing_analysis["agents_to_run"]
-        execution_strategy = routing_analysis["execution_strategy"]
-        
-        logger.info(f"🔄 Executing {execution_strategy} workflow with agents: {agents_to_run}")
-        
-        agent_results = []
+        workflow = StateGraph(dict)
+        workflow.add_node("execute_plan", self._langgraph_execute_plan)
+        workflow.set_entry_point("execute_plan")
+        workflow.add_edge("execute_plan", END)
+        return workflow.compile()
 
-        try:
-            if execution_strategy == "parallel":
-                # Fan-out is bounded by max_parallel_agents. Unbounded gather
-                # is fine for four in-process agents and stops being fine the
-                # moment one of them does I/O — the limit was already
-                # documented in the config, it just was not applied.
-                semaphore = asyncio.Semaphore(
-                    max(1, self.config.max_parallel_agents)
-                )
+    async def _langgraph_execute_plan(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        return {**state, "workflow_result": await self._execute_plan(state, state["routing_analysis"])}
 
-                async def _bounded(agent_name: str):
-                    async with semaphore:
-                        return await self._run_agent(agent_name, state)
+    async def _execute_langgraph_workflow(self, state, routing_analysis):
+        graph_state = {**state, "routing_analysis": routing_analysis}
+        result = await self.workflow.ainvoke(graph_state)
+        workflow_result = result["workflow_result"]
+        workflow_result["metadata"]["workflow_type"] = "langgraph"
+        return workflow_result
 
-                tasks = [
-                    _bounded(agent_name)
-                    for agent_name in agents_to_run
-                    if self._get_agent_by_name(agent_name)
-                ]
+    async def _execute_fallback_workflow(self, state, routing_analysis):
+        return await self._execute_plan(state, routing_analysis)
 
-                if tasks:
-                    results = await asyncio.gather(*tasks, return_exceptions=True)
-                    for result in results:
-                        if isinstance(result, Exception):
-                            logger.error(f"Agent execution error: {result}")
-                        else:
-                            agent_results.append(result)
+    async def _execute_plan(self, state, routing_analysis):
+        """Run an ordered plan once, retaining every specialist's outcome.
 
-            else:
-                # Run agents sequentially
-                for agent_name in agents_to_run:
-                    if not self._get_agent_by_name(agent_name):
-                        continue
-                    result = await self._run_agent(agent_name, state)
-                    agent_results.append(result)
+        Both executors share deadlines, concurrency, cancellation and result
+        ordering. Workflow failures are never retried through another path.
+        """
+        agents = list(dict.fromkeys(routing_analysis["agents_to_run"]))
+        strategy = routing_analysis["execution_strategy"]
+        semaphore = asyncio.Semaphore(self.config.max_parallel_agents)
 
-                    # Update state with results for next agent
-                    state["agent_results"] = agent_results
+        async def run(name):
+            async with semaphore:
+                return await self._run_agent(name, state)
 
-            # Synthesize results
-            final_response = await self._synthesize_agent_results(agent_results, state)
-            
-            return {
-                "success": True,
-                "response": final_response,
-                "metadata": {
-                    **state.get("metadata", {}),
-                    "workflow_type": "fallback",
-                    "execution_strategy": execution_strategy,
-                    "agents_used": [r.get("agent_name") for r in agent_results if r.get("success")],
-                    "routing_analysis": routing_analysis,
-                    "agents_run": len(agent_results),
-                    "successful_agents": len([r for r in agent_results if r.get("success")])
-                },
-                "agent_results": agent_results
-            }
-            
-        except Exception as e:
-            logger.error(f"❌ Fallback workflow execution failed: {e}")
-            return self._create_error_response(f"Workflow execution failed: {str(e)}")
-    
+        if strategy == "parallel":
+            tasks = [asyncio.create_task(run(name)) for name in agents]
+            try:
+                results = await asyncio.gather(*tasks)
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+        else:
+            results = []
+            for name in agents:
+                results.append(await run(name))
+                state = {**state, "agent_results": list(results)}
+        successful = [item for item in results if item.get("success") is True]
+        return {
+            "success": bool(successful),
+            "response": await self._synthesize_agent_results(results, state),
+            "metadata": {
+                **state.get("metadata", {}), "workflow_type": "fallback",
+                "execution_strategy": strategy, "routing_analysis": routing_analysis,
+                "agents_used": [item["agent_name"] for item in successful],
+                "agents_run": len(results), "successful_agents": len(successful),
+                "partial": len(successful) < len(results),
+            },
+            "agent_results": results,
+        }
+
     async def _run_agent(
         self,
         agent_name: str,
@@ -523,6 +427,9 @@ class AdvancedOrchestrator(BaseAgent):
         synthesis step sees one failed agent rather than never running.
         """
         agent = self._get_agent_by_name(agent_name)
+        if agent is None:
+            return {**failure("agent_contract_error"), "agent_name": agent_name,
+                    "agent_type": agent_name, "execution_time": 0.0}
         try:
             return await asyncio.wait_for(
                 agent.process(state),
@@ -534,14 +441,15 @@ class AdvancedOrchestrator(BaseAgent):
                 agent_name,
                 self.config.agent_timeout_seconds,
             )
-            return {
-                "agent_name": agent_name,
-                "agent_type": agent_name,
-                "success": False,
-                "execution_time": self.config.agent_timeout_seconds,
-                "error": "agent_timeout",
-                "response": "",
-            }
+            return {**failure("agent_timeout"), "agent_name": agent_name,
+                    "agent_type": agent_name,
+                    "execution_time": self.config.agent_timeout_seconds}
+        except Exception as exc:
+            result = failure()
+            logger.error("Specialist failed: category=%s request_id=%s",
+                         type(exc).__name__, result["request_id"])
+            return {**result, "agent_name": agent_name, "agent_type": agent_name,
+                    "execution_time": 0.0}
 
     async def _synthesize_with_llm(
         self,
@@ -590,8 +498,12 @@ class AdvancedOrchestrator(BaseAgent):
             ][:5]
             try:
                 confidence = min(1.0, max(0.0, float(parsed.get("confidence", 0.5))))
+                if not math.isfinite(float(parsed.get("confidence", 0.5))):
+                    confidence = 0.5
             except (TypeError, ValueError):
                 confidence = 0.5
+        if not response_text and (isinstance(parsed, dict) or completion.text.lstrip().startswith(("{", "["))):
+            raise LLMResponseError("LLM returned an invalid response object")
         if not response_text:
             # Contract violation (non-JSON or empty "response"): the raw
             # completion is still a real model answer — use it verbatim
@@ -658,15 +570,9 @@ class AdvancedOrchestrator(BaseAgent):
                 }
             )
 
-        payload = {
-            "user_message": state.get("user_message", ""),
-            "financial_context": state.get("user_context") or {},
-            "specialist_findings": compact_findings,
-        }
-        prompt = json.dumps(payload, default=str)
-        # Hard cap the prompt (~6k tokens of JSON). Truncation can only cut
-        # tail-end findings detail — the user message and context lead.
-        return prompt[:24000]
+        return compose_prompt(state.get("user_message", ""),
+                              state.get("user_context") or {}, compact_findings,
+                              self.config.max_output_tokens)
 
     async def _synthesize_agent_results(
         self,
@@ -699,7 +605,7 @@ class AdvancedOrchestrator(BaseAgent):
         risk_result = next((r for r in prioritized_results if r.get("agent_type") == "risk_assessment"), None)
         if risk_result and risk_result.get("response"):
             risk_score = risk_result.get("analysis", {}).get("overall_risk_score", 0)
-            if risk_score > 40:  # Only include if meaningful risk
+            if risk_score is not None and risk_score > 40:  # Only include if meaningful risk
                 response_parts.append(risk_result["response"])
         
         # Recommendations (always include if present)
@@ -709,11 +615,11 @@ class AdvancedOrchestrator(BaseAgent):
         
         # If no specific responses, provide summary
         if not response_parts:
-            response_parts.append("I've analyzed your financial situation across multiple dimensions. While I don't have specific recommendations at this moment, your overall financial health appears to be on track.")
+            response_parts.append("I've analyzed your financial situation across multiple dimensions. While I don't have specific recommendations at this moment, more verified context is needed to assess your financial health.")
         
         # Add closing if multiple agents provided input
         if len(successful_results) > 1:
-            response_parts.append("\nThis analysis considered your complete financial picture including goals, risk factors, and opportunities for optimization.")
+            response_parts.append("\nThis analysis considered the available financial context including goals, risk factors, and opportunities for optimization.")
         
         return "\n\n".join(response_parts)
     
@@ -765,87 +671,21 @@ class AdvancedOrchestrator(BaseAgent):
         
         return agent_map.get(agent_name)
     
-    # LangGraph node functions (for when LangGraph is available)
-    async def _langgraph_analyze_routing(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """LangGraph node for routing analysis"""
-        routing_analysis = await self._analyze_conversation_routing(
-            state["user_message"], state
-        )
-        state["routing_analysis"] = routing_analysis
-        return state
-    
-    # The LangGraph nodes route through _run_agent too, so the per-agent
-    # deadline holds on both execution paths rather than only the fallback.
-    async def _langgraph_financial_analysis(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """LangGraph node for financial analysis"""
-        state["agent_results"].append(
-            await self._run_agent("financial_analysis", state)
-        )
-        return state
-
-    async def _langgraph_goal_extraction(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """LangGraph node for goal extraction"""
-        state["agent_results"].append(
-            await self._run_agent("goal_extraction", state)
-        )
-        return state
-
-    async def _langgraph_risk_assessment(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """LangGraph node for risk assessment"""
-        state["agent_results"].append(
-            await self._run_agent("risk_assessment", state)
-        )
-        return state
-
-    async def _langgraph_generate_recommendations(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """LangGraph node for generating recommendations"""
-        state["agent_results"].append(
-            await self._run_agent("recommendation", state)
-        )
-        return state
-    
-    async def _langgraph_synthesize_results(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """LangGraph node for synthesizing results"""
-        final_response = await self._synthesize_agent_results(
-            state["agent_results"], state
-        )
-        state["final_response"] = final_response
-        return state
-    
-    def _langgraph_route_conversation(self, state: Dict[str, Any]) -> str:
-        """LangGraph routing function"""
-        
-        routing_analysis = state.get("routing_analysis", {})
-        selected_routing = routing_analysis.get("selected_routing", "comprehensive")
-        agents_to_run = routing_analysis.get("agents_to_run", [])
-        
-        # Map routing decisions to workflow paths
-        if selected_routing == "financial_analysis" and len(agents_to_run) == 1:
-            return "financial_only"
-        elif selected_routing == "goal_planning" and "goal_extraction" in agents_to_run:
-            return "goal_only"
-        elif selected_routing == "risk_assessment" and len(agents_to_run) <= 2:
-            return "risk_only"
-        elif "financial_analysis" in agents_to_run and "risk_assessment" in agents_to_run:
-            return "financial_and_risk"
-        else:
-            return "comprehensive"
-    
     def _create_error_response(
-        self, error_message: str, error_type: str = "orchestration_error"
+        self, error_message: str, error_type: str = "orchestration_error",
+        workflow_result: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Create a typed, machine-readable error response."""
+        """Keep the compatibility argument without exposing exception text."""
+        safe = failure(error_type)
+        logger.warning("Request failed: category=%s request_id=%s", safe["error_type"], safe["request_id"])
+        previous = workflow_result or {}
         return {
-            "success": False,
-            "error": error_message,
-            "error_type": error_type,
-            "response": "I encountered an issue processing your request. Please try rephrasing your question.",
+            **safe,
             "metadata": {
-                "orchestrator_type": "advanced",
-                "workflow_type": "error",
-                "error_type": error_type,
-                "processing_time": 0.0,
-                "timestamp": datetime.utcnow().isoformat()
+                **previous.get("metadata", {}),
+                "orchestrator_type": "advanced", "workflow_type": "error",
+                "error_type": safe["error_type"], "request_id": safe["request_id"],
+                "processing_time": 0.0, "timestamp": datetime.utcnow().isoformat(),
             },
-            "agent_results": []
+            "agent_results": previous.get("agent_results", []),
         }

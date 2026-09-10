@@ -115,6 +115,9 @@ class OpenAIProvider(LLMProvider):
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
         max_retries: int = DEFAULT_MAX_RETRIES,
     ):
+        from ..core.config import validate_limit
+        validate_limit("request_timeout", timeout)
+        validate_limit("max_retries", max_retries)
         key = api_key or os.getenv("OPENAI_API_KEY") or ""
         if not key:
             raise LLMNotConfiguredError(
@@ -152,6 +155,9 @@ class OpenAIProvider(LLMProvider):
         max_output_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
     ) -> LLMCompletion:
+        from ..core.config import validate_limit
+        validate_limit("max_output_tokens", max_output_tokens if max_output_tokens is not None else DEFAULT_MAX_OUTPUT_TOKENS)
+        validate_limit("llm_temperature", temperature)
         payload: List[Dict[str, str]] = []
         if system:
             payload.append({"role": "system", "content": system})
@@ -169,7 +175,7 @@ class OpenAIProvider(LLMProvider):
         try:
             response = await self._client.chat.completions.create(**request)
         except Exception as exc:  # SDK errors normalize to one typed error
-            raise LLMResponseError(f"OpenAI completion failed: {exc}") from exc
+            raise LLMResponseError("OpenAI completion failed") from exc
 
         try:
             text = response.choices[0].message.content or ""

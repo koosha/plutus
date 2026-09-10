@@ -172,7 +172,7 @@ class PlutusTestFramework:
                 "expected_complexity": question_data.get("complexity"),
                 "success": False,
                 "processing_time": processing_time,
-                "error": str(e),
+                "error": "evaluation_failed", "error_type": type(e).__name__,
                 "quality_score": 0.0
             }
     
@@ -226,7 +226,7 @@ class PlutusTestFramework:
         try:
             users = await self.data_service.get_all_users()
         except Exception as e:  # noqa: BLE001 - missing sample data, not a bug
-            logger.warning("Could not load sample users: %s", e)
+            logger.warning("Could not load sample users: category=%s", type(e).__name__)
             return None
         for user in users:
             if user.get("user_id") == user_id:

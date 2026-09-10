@@ -10,6 +10,7 @@ import json
 from typing import Dict, List, Any, Optional
 
 from .base_agent import BaseAgent
+from .boundaries import measurement, number, known_accounts, is_liability, is_liquid
 from .mixins import FinancialCalculationMixin, ResponseFormattingMixin, ClaudePromptMixin
 from ..models.state import ConversationState
 
@@ -67,14 +68,14 @@ class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseForma
         account_summary = user_context.get("account_summary", {})
         
         # Extract key financial data
-        net_worth = financial_snapshot.get("net_worth", 0)
-        monthly_income = financial_snapshot.get("monthly_income", 0)
-        monthly_expenses = financial_snapshot.get("monthly_expenses", 0)
-        wealth_health_score = financial_snapshot.get("wealth_health_score", 0)
+        net_worth = measurement(user_context, "net_worth")
+        monthly_income = measurement(user_context, "monthly_income")
+        monthly_expenses = measurement(user_context, "monthly_expenses")
+        wealth_health_score = measurement(user_context, "wealth_health_score")
         
         # Calculate key metrics
-        monthly_savings = monthly_income - monthly_expenses
-        savings_rate = monthly_savings / monthly_income if monthly_income > 0 else 0
+        monthly_savings = monthly_income - monthly_expenses if monthly_income is not None and monthly_expenses is not None else None
+        savings_rate = monthly_savings / monthly_income if monthly_savings is not None and monthly_income > 0 else None
         
         # Determine emergency fund status
         emergency_fund_months = self._calculate_emergency_fund_months(user_context)
@@ -105,106 +106,65 @@ class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseForma
             "financial_ratios": financial_ratios,
             "account_diversification": account_diversification,
             "key_insights": key_insights,
+            "policy_version": "financial-heuristics-v1",
             "financial_health_grade": self._calculate_health_grade(wealth_health_score)
         }
     
-    def _calculate_emergency_fund_months(self, user_context: Dict[str, Any]) -> float:
-        """Calculate emergency fund coverage in months"""
-        
-        financial_snapshot = user_context.get("financial_snapshot", {})
-        monthly_expenses = financial_snapshot.get("monthly_expenses", 0)
-        
-        if monthly_expenses <= 0:
-            return 0
-        
-        # Estimate liquid assets (simplified)
-        # In production, would identify specific emergency fund accounts
-        net_worth = financial_snapshot.get("net_worth", 0)
-        
-        # Assume 20% of net worth is liquid for emergency fund
-        estimated_liquid = net_worth * 0.2
-        
-        return estimated_liquid / monthly_expenses
-    
-    def _analyze_debt_situation(self, user_context: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze debt situation"""
-        
-        account_summary = user_context.get("account_summary", {})
-        financial_snapshot = user_context.get("financial_snapshot", {})
-        
-        has_debt = account_summary.get("has_debt", False)
-        monthly_income = financial_snapshot.get("monthly_income", 0)
-        
-        # Simplified debt analysis
-        # In production, would analyze specific debt accounts
-        
-        if has_debt:
-            # Estimate debt amounts (simplified)
-            estimated_debt = financial_snapshot.get("net_worth", 0) * 0.1  # Rough estimate
-            debt_to_income_ratio = abs(estimated_debt) / (monthly_income * 12) if monthly_income > 0 else 0
-            
-            debt_level = "high" if debt_to_income_ratio > 0.4 else "moderate" if debt_to_income_ratio > 0.2 else "low"
-            
-            return {
-                "has_debt": True,
-                "estimated_total_debt": abs(estimated_debt),
-                "debt_to_income_ratio": debt_to_income_ratio,
-                "debt_level": debt_level,
-                "needs_attention": debt_to_income_ratio > 0.3
-            }
+    def _calculate_emergency_fund_months(self, user_context):
+        expenses = measurement(user_context, "monthly_expenses")
+        measured = user_context.get("financial_measurements", {}).get("emergency_assets")
+        if isinstance(measured, dict):
+            liquid = number(measured.get("total")) if measured.get("complete") is True and measured.get("currency") == "USD" else None
         else:
-            return {
-                "has_debt": False,
-                "estimated_total_debt": 0,
-                "debt_to_income_ratio": 0,
-                "debt_level": "none",
-                "needs_attention": False
-            }
-    
+            accounts = known_accounts(user_context)
+            liquid = sum(max(0, item["balance"]) for item in accounts if is_liquid(item)) if accounts is not None else None
+        if liquid is None or expenses is None or expenses <= 0:
+            return None
+        return liquid / expenses
+
+    def _analyze_debt_situation(self, user_context):
+        accounts = known_accounts(user_context)
+        income = measurement(user_context, "monthly_income")
+        total = sum(abs(item["balance"]) for item in accounts if is_liability(item)) if accounts is not None else None
+        ratio = total / (income * 12) if total is not None and income is not None and income > 0 else None
+        return {"has_debt": total > 0 if total is not None else None,
+                "estimated_total_debt": total, "total_debt": total,
+                "debt_to_income_ratio": ratio,
+                "debt_level": "unknown" if ratio is None else "high" if ratio > 0.4 else "moderate" if ratio > 0.2 else "low" if total else "none",
+                "needs_attention": ratio > 0.3 if ratio is not None else None,
+                "evidence": "supplied USD account balances", "policy_version": "financial-heuristics-v1"}
+
     def _calculate_financial_ratios(self, user_context: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate key financial ratios"""
         
         financial_snapshot = user_context.get("financial_snapshot", {})
         
-        net_worth = financial_snapshot.get("net_worth", 0)
-        monthly_income = financial_snapshot.get("monthly_income", 0)
-        monthly_expenses = financial_snapshot.get("monthly_expenses", 0)
+        net_worth = measurement(user_context, "net_worth")
+        monthly_income = measurement(user_context, "monthly_income")
+        monthly_expenses = measurement(user_context, "monthly_expenses")
         
         # Calculate ratios
-        monthly_savings = monthly_income - monthly_expenses
-        savings_rate = monthly_savings / monthly_income if monthly_income > 0 else 0
+        monthly_savings = monthly_income - monthly_expenses if monthly_income is not None and monthly_expenses is not None else None
+        savings_rate = monthly_savings / monthly_income if monthly_savings is not None and monthly_income > 0 else None
         
         # Net worth to income ratio
-        annual_income = monthly_income * 12
-        net_worth_to_income = net_worth / annual_income if annual_income > 0 else 0
+        annual_income = monthly_income * 12 if monthly_income is not None else None
+        net_worth_to_income = net_worth / annual_income if net_worth is not None and annual_income is not None and annual_income > 0 else None
         
         return {
             "savings_rate": savings_rate,
             "net_worth_to_income_ratio": net_worth_to_income,
             "monthly_surplus": monthly_savings,
-            "expense_ratio": monthly_expenses / monthly_income if monthly_income > 0 else 0
+            "expense_ratio": monthly_expenses / monthly_income if monthly_expenses is not None and monthly_income is not None and monthly_income > 0 else None
         }
     
-    def _assess_account_diversification(self, user_context: Dict[str, Any]) -> Dict[str, Any]:
-        """Assess account type diversification"""
-        
-        account_summary = user_context.get("account_summary", {})
-        
-        total_accounts = account_summary.get("total_accounts", 0)
-        account_types = account_summary.get("account_types", [])
-        has_investment_accounts = account_summary.get("has_investment_accounts", False)
-        
-        # Assess diversification
-        diversification_score = min(100, (len(account_types) / 5) * 100)  # 5+ types = full score
-        
-        return {
-            "total_accounts": total_accounts,
-            "account_types_count": len(account_types),
-            "has_investment_accounts": has_investment_accounts,
-            "diversification_score": diversification_score,
-            "needs_diversification": diversification_score < 60
-        }
-    
+    def _assess_account_diversification(self, user_context):
+        accounts = known_accounts(user_context)
+        return {"total_accounts": len(accounts) if accounts is not None else None,
+                "account_types_count": len({item.get("type") for item in accounts}) if accounts is not None else None,
+                "has_investment_accounts": any(item.get("type") == "investment" for item in accounts) if accounts is not None else None,
+                "diversification_score": None, "needs_diversification": None}
+
     def _generate_financial_insights(self, 
                                    savings_rate: float,
                                    emergency_fund_months: float,
@@ -214,45 +174,51 @@ class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseForma
         
         insights = []
         
-        # Savings rate insights
-        if savings_rate > 0.2:
-            insights.append("Excellent savings rate - you're saving over 20% of income")
-        elif savings_rate > 0.15:
-            insights.append("Good savings rate - you're meeting the 15% recommendation")
-        elif savings_rate > 0.1:
-            insights.append("Moderate savings rate - consider increasing to 15% if possible")
-        else:
-            insights.append("Low savings rate - focus on increasing monthly savings")
-        
-        # Emergency fund insights
-        if emergency_fund_months >= 6:
-            insights.append("Strong emergency fund - you have 6+ months of expenses covered")
-        elif emergency_fund_months >= 3:
-            insights.append("Adequate emergency fund - consider building to 6 months")
-        else:
-            insights.append("Emergency fund needs attention - aim for 3-6 months of expenses")
-        
-        # Debt insights
-        if debt_analysis.get("needs_attention", False):
-            insights.append("High debt levels detected - prioritize debt reduction strategy")
-        elif debt_analysis.get("has_debt", False):
-            insights.append("Manageable debt levels - maintain current payment strategy")
-        else:
-            insights.append("No significant debt - great position for wealth building")
-        
-        # Overall wealth health
-        if wealth_health_score >= 80:
-            insights.append("Excellent overall financial health")
-        elif wealth_health_score >= 60:
-            insights.append("Good financial health with room for improvement")
-        else:
-            insights.append("Financial health needs attention - focus on foundational areas")
-        
+        if savings_rate is not None:
+            # Savings rate insights
+            if savings_rate > 0.2:
+                insights.append("Excellent savings rate - you're saving over 20% of income")
+            elif savings_rate > 0.15:
+                insights.append("Good savings rate - you're meeting the 15% recommendation")
+            elif savings_rate > 0.1:
+                insights.append("Moderate savings rate - consider increasing to 15% if possible")
+            else:
+                insights.append("Low savings rate - focus on increasing monthly savings")
+
+        if emergency_fund_months is not None:
+            # Emergency fund insights
+            if emergency_fund_months >= 6:
+                insights.append("Strong emergency fund - you have 6+ months of expenses covered")
+            elif emergency_fund_months >= 3:
+                insights.append("Adequate emergency fund - consider building to 6 months")
+            else:
+                insights.append("Emergency fund needs attention - aim for 3-6 months of expenses")
+
+        if debt_analysis.get("has_debt") is not None:
+            # Debt insights
+            if debt_analysis.get("needs_attention", False):
+                insights.append("High debt levels detected - prioritize debt reduction strategy")
+            elif debt_analysis.get("has_debt", False):
+                insights.append("Manageable debt levels - maintain current payment strategy")
+            else:
+                insights.append("No significant debt - great position for wealth building")
+
+        if wealth_health_score is not None:
+            # Overall wealth health
+            if wealth_health_score >= 80:
+                insights.append("Excellent overall financial health")
+            elif wealth_health_score >= 60:
+                insights.append("Good financial health with room for improvement")
+            else:
+                insights.append("Financial health needs attention - focus on foundational areas")
+
         return insights
     
     def _calculate_health_grade(self, wealth_health_score: float) -> str:
         """Calculate letter grade for financial health"""
         
+        if wealth_health_score is None:
+            return "unknown"
         if wealth_health_score >= 90:
             return "A+"
         elif wealth_health_score >= 85:
@@ -283,14 +249,14 @@ class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseForma
         
         # Emergency fund recommendations
         emergency_fund_months = analysis.get("emergency_fund_months", 0)
-        if emergency_fund_months < 3:
+        if emergency_fund_months is not None and emergency_fund_months < 3:
             recommendations.append("Build emergency fund to 3-6 months of expenses as top priority")
-        elif emergency_fund_months < 6:
+        elif emergency_fund_months is not None and emergency_fund_months < 6:
             recommendations.append("Continue building emergency fund to 6 months of expenses")
         
         # Savings rate recommendations
         savings_rate = analysis.get("savings_rate", 0)
-        if savings_rate < 0.15:
+        if savings_rate is not None and savings_rate < 0.15:
             recommendations.append("Increase savings rate to at least 15% of income")
         
         # Debt recommendations
@@ -300,12 +266,12 @@ class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseForma
         
         # Investment recommendations
         account_diversification = analysis.get("account_diversification", {})
-        if not account_diversification.get("has_investment_accounts", False):
+        if account_diversification.get("has_investment_accounts") is False:
             recommendations.append("Consider opening investment accounts for long-term growth")
         
         # Wealth health recommendations
         wealth_health_score = analysis.get("wealth_health_score", 0)
-        if wealth_health_score < 70:
+        if wealth_health_score is not None and wealth_health_score < 70:
             recommendations.append("Focus on foundational financial health improvements")
         
         return recommendations
@@ -317,12 +283,12 @@ class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseForma
         
         # Check data completeness
         required_fields = ["net_worth", "monthly_income", "monthly_expenses"]
-        available_fields = sum(1 for field in required_fields if financial_snapshot.get(field, 0) > 0)
+        available_fields = sum(1 for field in required_fields if measurement(user_context, field) is not None)
         
         base_confidence = available_fields / len(required_fields)
         
         # Adjust based on wealth health score availability
-        if financial_snapshot.get("wealth_health_score", 0) > 0:
+        if measurement(user_context, "wealth_health_score") is not None:
             base_confidence += 0.2
         
         return min(1.0, base_confidence)

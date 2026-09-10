@@ -116,7 +116,8 @@ class TestProviderFailurePath:
 
         assert result["success"] is False
         assert result["error_type"] == "llm_error"
-        assert "upstream 500" in result["error"]
+        assert "upstream 500" not in result["error"]
+        assert result["request_id"]
 
     async def test_empty_completion_maps_to_llm_error(self):
         provider = FakeProvider(raw_text="   ")

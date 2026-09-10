@@ -23,6 +23,7 @@ import json
 import math
 
 from .base_agent import BaseAgent
+from .boundaries import failure, number, measurement, known_accounts, unknown_assessment, is_liability, is_liquid
 from ..models.state import ConversationState, UserContext
 from ..core.config import get_config
 
@@ -149,7 +150,10 @@ class RiskAssessmentAgent(BaseAgent):
                 "response": response_text,
                 "analysis": {
                     "overall_risk_score": overall_risk_score,
-                    "risk_profile": self._determine_risk_profile(overall_risk_score),
+                    "risk_profile": user_context.get("risk_tolerance") if user_context.get("risk_tolerance") in self.risk_profiles else "unknown",
+                    "risk_level": self._determine_risk_profile(overall_risk_score),
+                    "policy_version": "risk-heuristics-v1",
+                    "coverage": sum(item.get("score") is not None for item in risk_assessment.values()) / len(risk_assessment),
                     "primary_risk_factors": risk_factors[:3],  # Top 3 risks
                     "risk_inquiry_detected": risk_inquiry["is_risk_related"]
                 },
@@ -165,8 +169,8 @@ class RiskAssessmentAgent(BaseAgent):
             return agent_result
             
         except Exception as e:
-            logger.error(f"❌ Risk Assessment Agent error: {e}")
-            return self._create_error_response(f"Risk assessment failed: {str(e)}")
+            logger.error("Specialist failed: category=%s", type(e).__name__)
+            return self._create_error_response("analysis_failed")
     
     async def _analyze_risk_inquiry(self, message: str) -> Dict[str, Any]:
         """Analyze if the user is asking about risk"""
@@ -241,75 +245,44 @@ class RiskAssessmentAgent(BaseAgent):
         return assessment
     
     async def _assess_investment_risk(self, user_context: Dict) -> Dict[str, Any]:
-        """Assess investment portfolio risk"""
-        
-        accounts = user_context.get("accounts", [])
-        investment_accounts = [acc for acc in accounts if acc.get("type") == "investment"]
-        
-        if not investment_accounts:
-            return {
-                "score": 0,  # No investment risk if no investments
-                "risk_level": "none",
-                "factors": ["No investment accounts found"],
-                "diversification_score": 0,
-                "concentration_risk": False
-            }
-        
-        total_investment = sum(acc.get("balance", 0) for acc in investment_accounts)
-        net_worth = user_context.get("net_worth", 1)
-        investment_percentage = total_investment / max(net_worth, 1)
-        
-        # Calculate portfolio concentration risk
-        largest_holding_pct = 0.5  # Assume 50% max concentration without detailed holdings
-        concentration_risk = largest_holding_pct > 0.25
-        
-        # Estimate diversification based on account types
-        diversification_score = min(len(investment_accounts) * 20, 100)  # Max 100
-        
-        # Calculate investment risk score (0-100, higher = more risky)
-        risk_score = 0
-        
-        # Investment percentage risk
-        if investment_percentage > 0.8:  # More than 80% in investments
-            risk_score += 40
-        elif investment_percentage > 0.6:
-            risk_score += 25
-        elif investment_percentage > 0.4:
-            risk_score += 10
-        
-        # Concentration risk
-        if concentration_risk:
-            risk_score += 30
-        
-        # Diversification penalty
-        if diversification_score < 50:
-            risk_score += 20
-        
-        # Age-based risk adjustment
-        age = user_context.get("age", 30)
-        if age > 50 and investment_percentage > 0.7:  # High equity allocation for older investors
-            risk_score += 15
-        
-        risk_level = "low" if risk_score < 30 else "medium" if risk_score < 60 else "high"
-        
-        return {
-            "score": min(risk_score, 100),
-            "risk_level": risk_level,
-            "investment_percentage": investment_percentage,
-            "diversification_score": diversification_score,
-            "concentration_risk": concentration_risk,
-            "factors": self._identify_investment_risk_factors(
-                investment_percentage, diversification_score, concentration_risk, age
-            )
-        }
-    
+        """Assess concentration from eligible holdings, never account count."""
+        provenance = user_context.get("data_provenance", {}).get("holdings", {})
+        holdings = user_context.get("holdings")
+        if (provenance.get("availability") in ("withheld", "failed", "unavailable")
+                or not isinstance(holdings, list) or not holdings
+                or any(not isinstance(item, dict) or item.get("currency") != "USD"
+                       or number(item.get("value")) is None or item["value"] < 0
+                       for item in holdings)):
+            return {**unknown_assessment("eligible_holdings"), "largest_holding_percentage": None,
+                    "concentration_risk": None, "diversification_score": None}
+        # Combine the same security across accounts before measuring its weight.
+        by_security = {}
+        for item in holdings:
+            security = item.get("security_id") or item.get("symbol") or item.get("ticker")
+            if not security:
+                return {**unknown_assessment("holding_identity"), "concentration_risk": None}
+            by_security[security] = by_security.get(security, 0) + item["value"]
+        total = sum(by_security.values())
+        if total <= 0:
+            return unknown_assessment("positive_holding_values")
+        largest = max(by_security.values()) / total
+        concentrated = largest > 0.25
+        return {"score": 60 if concentrated else 20,
+                "risk_level": "high" if concentrated else "low",
+                "concentration_risk": concentrated, "largest_holding_percentage": largest,
+                "diversification_score": None,
+                "factors": ["A single holding exceeds 25% of supplied investment value"] if concentrated else [],
+                "availability": "available", "policy_version": "risk-heuristics-v1",
+                "evidence": {"currency": "USD", "holdings_count": len(holdings),
+                             "scope": "supplied holdings concentration only"}}
+
     async def _assess_income_risk(self, user_context: Dict) -> Dict[str, Any]:
         """Assess income stability and employment risk"""
         
-        monthly_income = user_context.get("monthly_income", 0)
-        employment_type = user_context.get("employment_type", "full_time")
-        industry = user_context.get("industry", "unknown")
-        years_with_employer = user_context.get("years_with_employer", 1)
+        monthly_income = measurement(user_context, "monthly_income")
+        employment_type = user_context.get("employment_type")
+        industry = user_context.get("industry")
+        years_with_employer = number(user_context.get("years_with_employer"))
         
         risk_score = 0
         risk_factors = []
@@ -334,27 +307,33 @@ class RiskAssessmentAgent(BaseAgent):
             risk_score -= 10  # Reduce risk for stable industries
         
         # Job tenure risk
-        if years_with_employer < 1:
+        if years_with_employer is not None and years_with_employer < 1:
             risk_score += 20
             risk_factors.append("Short tenure with current employer")
-        elif years_with_employer > 5:
+        elif years_with_employer is not None and years_with_employer > 5:
             risk_score -= 10  # Reduce risk for stable employment
         
         # Income diversification
-        has_side_income = user_context.get("has_side_income", False)
-        if not has_side_income:
+        has_side_income = user_context.get("has_side_income")
+        if has_side_income is False:
             risk_score += 15
             risk_factors.append("Single source of income increases risk")
         
         # Age and career stage risk
-        age = user_context.get("age", 30)
-        if age > 55:
+        age = number(user_context.get("age"))
+        if age is not None and age > 55:
             risk_score += 20
             risk_factors.append("Older workers may face age discrimination in job search")
-        elif age < 25:
+        elif age is not None and age < 25:
             risk_score += 10
             risk_factors.append("Early career stage may have less job security")
         
+        missing = [key for key in ("employment_type", "industry", "years_with_employer", "has_side_income", "age")
+                   if user_context.get(key) is None]
+        if missing:
+            return {**unknown_assessment(*missing), "employment_type": employment_type,
+                    "years_with_employer": years_with_employer,
+                    "has_income_diversification": has_side_income, "factors": risk_factors}
         risk_level = "low" if risk_score < 30 else "medium" if risk_score < 60 else "high"
         
         return {
@@ -370,11 +349,15 @@ class RiskAssessmentAgent(BaseAgent):
     async def _assess_debt_risk(self, user_context: Dict) -> Dict[str, Any]:
         """Assess debt burden and payment risk"""
         
-        monthly_income = user_context.get("monthly_income", 1)
-        accounts = user_context.get("accounts", [])
+        monthly_income = measurement(user_context, "monthly_income")
+        accounts = known_accounts(user_context)
+        if monthly_income is None or monthly_income <= 0 or accounts is None:
+            return unknown_assessment("monthly_income", "eligible_accounts")
+        if any(number(item.get("interest_rate")) is None for item in accounts if is_liability(item)):
+            return unknown_assessment("debt_interest_rates")
         
         # Calculate total debt
-        debt_accounts = [acc for acc in accounts if acc.get("balance", 0) < 0]
+        debt_accounts = [acc for acc in accounts if is_liability(acc)]
         total_debt = sum(abs(acc.get("balance", 0)) for acc in debt_accounts)
         
         # Calculate debt-to-income ratio
@@ -451,13 +434,15 @@ class RiskAssessmentAgent(BaseAgent):
     async def _assess_liquidity_risk(self, user_context: Dict) -> Dict[str, Any]:
         """Assess emergency fund and cash availability risk"""
         
-        monthly_expenses = user_context.get("monthly_expenses", 3000)
-        accounts = user_context.get("accounts", [])
+        monthly_expenses = measurement(user_context, "monthly_expenses")
+        accounts = known_accounts(user_context)
+        if monthly_expenses is None or monthly_expenses <= 0 or accounts is None:
+            return unknown_assessment("monthly_expenses", "eligible_accounts")
         
         # Calculate liquid assets (checking, savings)
         liquid_accounts = [
             acc for acc in accounts 
-            if acc.get("type") in ["checking", "savings"]
+            if is_liquid(acc)
         ]
         total_liquid = sum(acc.get("balance", 0) for acc in liquid_accounts)
         
@@ -485,7 +470,7 @@ class RiskAssessmentAgent(BaseAgent):
         # Liquidity concentration
         checking_balance = sum(
             acc.get("balance", 0) for acc in accounts 
-            if acc.get("type") == "checking"
+            if acc.get("type") == "checking" or acc.get("subtype") == "checking"
         )
         if checking_balance > monthly_expenses * 2:
             risk_score += 5
@@ -503,60 +488,25 @@ class RiskAssessmentAgent(BaseAgent):
         }
     
     async def _assess_insurance_risk(self, user_context: Dict) -> Dict[str, Any]:
-        """Assess insurance coverage and protection risk"""
-        
-        age = user_context.get("age", 30)
-        annual_income = user_context.get("monthly_income", 5000) * 12
-        has_dependents = user_context.get("has_dependents", False)
-        
-        # Insurance coverage (simplified assessment)
-        has_health_insurance = user_context.get("has_health_insurance", True)
-        has_life_insurance = user_context.get("has_life_insurance", False)
-        has_disability_insurance = user_context.get("has_disability_insurance", False)
-        owns_home = user_context.get("owns_home", False)
-        has_homeowners_insurance = user_context.get("has_homeowners_insurance", owns_home)
-        
-        risk_score = 0
-        risk_factors = []
-        
-        # Health insurance
-        if not has_health_insurance:
-            risk_score += 40
-            risk_factors.append("No health insurance coverage")
-        
-        # Life insurance (if dependents)
-        if has_dependents and not has_life_insurance:
-            risk_score += 30
-            risk_factors.append("No life insurance with dependents")
-        elif not has_dependents and not has_life_insurance and annual_income > 75000:
-            risk_score += 10
-            risk_factors.append("Consider life insurance for final expenses")
-        
-        # Disability insurance
-        if not has_disability_insurance and age < 60:
-            risk_score += 25
-            risk_factors.append("No disability insurance coverage")
-        
-        # Homeowners/renters insurance
-        if owns_home and not has_homeowners_insurance:
-            risk_score += 35
-            risk_factors.append("No homeowners insurance")
-        elif not owns_home:
-            risk_score += 10
-            risk_factors.append("Consider renters insurance for personal property")
-        
-        risk_level = "low" if risk_score < 30 else "medium" if risk_score < 60 else "high"
-        
-        return {
-            "score": min(risk_score, 100),
-            "risk_level": risk_level,
-            "has_health_insurance": has_health_insurance,
-            "has_life_insurance": has_life_insurance,
-            "has_disability_insurance": has_disability_insurance,
-            "has_homeowners_insurance": has_homeowners_insurance,
-            "factors": risk_factors
-        }
-    
+        """Report only explicitly supplied coverage facts."""
+        keys = ("has_health_insurance", "has_life_insurance", "has_disability_insurance",
+                "has_homeowners_insurance", "has_dependents", "owns_home")
+        facts = {key: user_context.get(key) if isinstance(user_context.get(key), bool) else None for key in keys}
+        missing = [key for key, value in facts.items() if value is None]
+        factors, score = [], 0
+        for absent, relevant, penalty, description in (
+            (facts['has_health_insurance'] is False, True, 40, 'No health insurance reported'),
+            (facts['has_life_insurance'] is False, facts['has_dependents'] is True, 30, 'No life insurance reported with dependents'),
+            (facts['has_homeowners_insurance'] is False, facts['owns_home'] is True, 35, 'No homeowners insurance reported for owned home'),
+        ):
+            if absent and relevant:
+                score += penalty
+                factors.append(description)
+        result = unknown_assessment(*missing) if missing else {
+            'score': min(score, 100), 'risk_level': 'high' if score >= 60 else 'medium' if score >= 30 else 'low',
+            'availability': 'available', 'policy_version': 'risk-heuristics-v1'}
+        return {**result, **facts, 'factors': factors, 'evidence': {'source': 'user_reported'}}
+
     async def _calculate_overall_risk_score(self, risk_assessment: Dict) -> int:
         """Calculate weighted overall risk score"""
         
@@ -565,12 +515,14 @@ class RiskAssessmentAgent(BaseAgent):
         
         for category, weight_data in self.risk_categories.items():
             if category in risk_assessment:
-                score = risk_assessment[category]["score"]
+                score = number(risk_assessment[category].get("score"))
+                if score is None:
+                    return None
                 weight = weight_data["weight"]
                 total_score += score * weight
                 total_weight += weight
         
-        overall_score = total_score / max(total_weight, 1)
+        overall_score = total_score / total_weight if total_weight else 0
         return round(overall_score)
     
     async def _identify_risk_factors(self, risk_assessment: Dict, user_context: Dict) -> List[Dict[str, Any]]:
@@ -584,7 +536,7 @@ class RiskAssessmentAgent(BaseAgent):
             risk_level = assessment.get("risk_level", "low")
             factors = assessment.get("factors", [])
             
-            if risk_score > 30:  # Only include significant risks
+            if risk_score is not None and risk_score > 30:  # Only include significant risks
                 risk_factors.append({
                     "category": category,
                     "risk_score": risk_score,
@@ -687,7 +639,7 @@ class RiskAssessmentAgent(BaseAgent):
         risk_profile = self._determine_risk_profile(overall_risk_score)
         
         # Overall risk management recommendation
-        if overall_risk_score > 70:
+        if overall_risk_score is not None and overall_risk_score > 70:
             recommendations.append({
                 "type": "high_risk_alert",
                 "priority": "critical",
@@ -718,24 +670,6 @@ class RiskAssessmentAgent(BaseAgent):
                     "action": "Create debt payoff plan focusing on highest interest rates first"
                 })
         
-        # Investment recommendations based on risk profile
-        if risk_profile == "conservative":
-            recommendations.append({
-                "type": "conservative_allocation",
-                "priority": "medium",
-                "title": "Conservative Investment Approach",
-                "description": "Given your risk profile, focus on stable, lower-risk investments",
-                "action": "Target 30% stocks, 60% bonds, 10% cash allocation"
-            })
-        elif risk_profile == "aggressive" and user_context.get("age", 30) > 50:
-            recommendations.append({
-                "type": "age_appropriate_risk",
-                "priority": "medium",
-                "title": "Consider Age-Appropriate Risk Level",
-                "description": "High risk tolerance may not be suitable as you approach retirement",
-                "action": "Consider gradually reducing portfolio risk as you age"
-            })
-        
         return recommendations
     
     async def _generate_risk_response(
@@ -748,6 +682,8 @@ class RiskAssessmentAgent(BaseAgent):
     ) -> str:
         """Generate natural language response about risk"""
         
+        if overall_risk_score is None:
+            return "There is insufficient verified information for an overall risk score. Supplied facts can support only a partial assessment."
         if not risk_inquiry["is_risk_related"] and overall_risk_score < 40:
             return ""  # Don't overwhelm with risk info if not requested and risk is low
         
@@ -759,7 +695,7 @@ class RiskAssessmentAgent(BaseAgent):
         if risk_inquiry["is_risk_related"]:
             response_parts.append("I've analyzed your financial risk profile comprehensively.")
         
-        response_parts.append(f"Your overall financial risk score is {overall_risk_score}/100, indicating a {risk_profile} risk profile.")
+        response_parts.append(f"Your overall financial risk score is {overall_risk_score}/100, indicating {risk_profile} financial vulnerability under this heuristic policy.")
         
         # Highlight top risks
         if risk_factors:
@@ -787,12 +723,10 @@ class RiskAssessmentAgent(BaseAgent):
     # Helper methods
     def _determine_risk_profile(self, overall_risk_score: int) -> str:
         """Determine risk profile based on overall score"""
-        for profile, data in self.risk_profiles.items():
-            min_score, max_score = data["score_range"]
-            if min_score <= overall_risk_score <= max_score:
-                return profile
-        return "moderate"  # Default
-    
+        if overall_risk_score is None:
+            return "unknown"
+        return "low" if overall_risk_score < 30 else "medium" if overall_risk_score < 60 else "high"
+
     def _identify_investment_risk_factors(self, investment_pct: float, diversification: int, concentration: bool, age: int) -> List[str]:
         """Identify specific investment risk factors"""
         factors = []
@@ -814,7 +748,7 @@ class RiskAssessmentAgent(BaseAgent):
             "agent_name": self.agent_name,
             "agent_type": self.agent_type,
             "success": False,
-            "error": error_message,
+            **failure(),
             "response": "I encountered an issue while assessing financial risk. Please try again.",
             "processing_time": 0.0,
             "timestamp": datetime.utcnow().isoformat()

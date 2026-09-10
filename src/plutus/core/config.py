@@ -29,6 +29,7 @@ Deliberately absent
 
 import dataclasses
 import logging
+import math
 import os
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
@@ -37,40 +38,47 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def _float_from_env(name: str, current: float) -> float:
-    """Override a float from the environment; ignore unusable values.
+# Limits bound work even when configuration is supplied directly by a host.
+_LIMITS = {
+    "request_timeout": (float, 0, 3600),
+    "agent_timeout_seconds": (float, 0, 3600),
+    "max_retries": (int, 0, 10),
+    "max_parallel_agents": (int, 1, 64),
+    "max_output_tokens": (int, 1, 16384),
+    "context_ttl_seconds": (int, 1, 604800),
+    "llm_temperature": (float, 0, 2),
+}
 
-    A malformed operational limit must not take the process down at import
-    time — but it also must not silently become something else, so it is
-    logged and the documented default stands.
-    """
-    raw = os.getenv(name)
-    if not raw:
-        return current
+
+def validate_limit(name, value):
+    """Reject invalid host settings without including their raw value."""
+    kind, minimum, maximum = _LIMITS[name]
+    if name == "llm_temperature" and value is None:
+        return value
+    valid_type = isinstance(value, (int, float)) if kind is float else isinstance(value, int)
     try:
-        value = float(raw)
-    except ValueError:
-        logger.warning("Ignoring non-numeric %s=%r", name, raw)
-        return current
-    if value <= 0:
-        logger.warning("Ignoring non-positive %s=%r", name, raw)
-        return current
+        finite = math.isfinite(value) if valid_type else False
+    except OverflowError:
+        finite = False
+    if isinstance(value, bool) or not valid_type or not finite:
+        raise ValueError(f"{name} must be a finite {kind.__name__}")
+    if value < minimum or value > maximum or (name.endswith('timeout') or name == 'agent_timeout_seconds') and value == 0:
+        raise ValueError(f"{name} is outside its supported range")
     return value
 
 
-def _int_from_env(name: str, current: int) -> int:
-    raw = os.getenv(name)
-    if not raw:
+def _from_env(env_name, name, current):
+    raw = os.getenv(env_name)
+    if raw is None or raw == "":
         return current
     try:
-        value = int(raw)
-    except ValueError:
-        logger.warning("Ignoring non-integer %s=%r", name, raw)
+        value = _LIMITS[name][0](raw)
+        return validate_limit(name, value)
+    except (ValueError, OverflowError):
+        # Malformed environment overrides retain a previously validated safe
+        # default. Never log raw environment values (they may be secrets).
+        logger.warning("Ignoring invalid operational setting %s", env_name)
         return current
-    if value < 0:
-        logger.warning("Ignoring negative %s=%r", name, raw)
-        return current
-    return value
 
 # Load environment variables from a repo-local .env file when present.
 # Importing this module must never print, raise, or require any file to exist:
@@ -143,42 +151,26 @@ class PlutusConfig:
     def __post_init__(self):
         """Initialize configuration from environment variables"""
         
-        # Load from environment
+        for name in _LIMITS:
+            validate_limit(name, getattr(self, name))
         self.openai_api_key = os.getenv("OPENAI_API_KEY", self.openai_api_key)
         self.model = os.getenv("PLUTUS_MODEL", self.model)
-        _temperature = os.getenv("PLUTUS_TEMPERATURE")
-        if _temperature:
-            try:
-                self.llm_temperature = float(_temperature)
-            except ValueError:
-                logger.warning(
-                    "Ignoring non-numeric PLUTUS_TEMPERATURE=%r", _temperature
-                )
-        _max_out = os.getenv("PLUTUS_MAX_OUTPUT_TOKENS")
-        if _max_out:
-            try:
-                self.max_output_tokens = int(_max_out)
-            except ValueError:
-                logger.warning(
-                    "Ignoring non-numeric PLUTUS_MAX_OUTPUT_TOKENS=%r", _max_out
-                )
-        self.request_timeout = _float_from_env(
-            "PLUTUS_REQUEST_TIMEOUT", self.request_timeout
-        )
-        self.max_retries = _int_from_env(
-            "PLUTUS_MAX_RETRIES", self.max_retries
-        )
-        self.agent_timeout_seconds = _float_from_env(
-            "PLUTUS_AGENT_TIMEOUT", self.agent_timeout_seconds
-        )
-        self.max_parallel_agents = _int_from_env(
-            "PLUTUS_MAX_PARALLEL_AGENTS", self.max_parallel_agents
-        )
+        env_limits = {
+            "PLUTUS_TEMPERATURE": "llm_temperature",
+            "PLUTUS_MAX_OUTPUT_TOKENS": "max_output_tokens",
+            "PLUTUS_REQUEST_TIMEOUT": "request_timeout",
+            "PLUTUS_MAX_RETRIES": "max_retries",
+            "PLUTUS_AGENT_TIMEOUT": "agent_timeout_seconds",
+            "PLUTUS_MAX_PARALLEL_AGENTS": "max_parallel_agents",
+            "PLUTUS_CONTEXT_TTL": "context_ttl_seconds",
+        }
+        for env_name, name in env_limits.items():
+            setattr(self, name, _from_env(env_name, name, getattr(self, name)))
         self.database_url = os.getenv("DATABASE_URL", self.database_url)
         self.redis_url = os.getenv("REDIS_URL", self.redis_url)
 
         # Integration mode detection
-        self.integration_mode = os.getenv("PLUTUS_INTEGRATION_MODE", "true").lower() == "true"
+        self.integration_mode = os.getenv("PLUTUS_INTEGRATION_MODE", str(self.integration_mode)).lower() == "true"
         self.standalone_mode = not self.integration_mode
         
         # Validate required settings

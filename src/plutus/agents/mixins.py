@@ -67,32 +67,10 @@ class TextParsingMixin:
     """Mixin providing common text parsing utilities."""
     
     def extract_financial_amounts(self, text: str) -> List[float]:
-        """Extract monetary amounts from text."""
-        money_patterns = [
-            r'\$([0-9,]+(?:\.[0-9]{2})?)',           # $1,000.00
-            r'([0-9,]+(?:\.[0-9]{2})?) dollars',    # 1000 dollars
-            r'([0-9,]+)k',                          # 50k
-            r'([0-9,]+) thousand',                  # 50 thousand
-        ]
-        
-        amounts = []
-        
-        for pattern in money_patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for match in matches:
-                try:
-                    clean_amount = match.replace(',', '')
-                    amount = float(clean_amount)
-                    
-                    if 'k' in match.lower() or 'thousand' in text.lower():
-                        amount *= 1000
-                    
-                    amounts.append(amount)
-                except ValueError:
-                    continue
-        
-        return amounts
-    
+        """Compatibility entry point for the shared money parser."""
+        from .boundaries import financial_amounts
+        return financial_amounts(text)
+
     def extract_time_references(self, text: str) -> List[Dict[str, Any]]:
         """Extract time references from text."""
         time_patterns = [
