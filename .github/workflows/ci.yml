@@ -1,0 +1,84 @@
+name: Plutus CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: plutus-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  package:
+    name: Package (${{ matrix.python }}, ${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: "3.9"
+            mode: minimal
+          - python: "3.10"
+            mode: graph
+          - python: "3.12"
+            mode: minimal
+          - python: "3.12"
+            mode: graph
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.8.22"
+      - run: uv python install ${{ matrix.python }}
+      - name: Lock metadata must match the package
+        id: lock
+        run: uv lock --check
+      - name: Install the locked supported mode
+        run: |
+          if [ "${{ matrix.mode }}" = graph ]; then
+            uv sync --locked --python ${{ matrix.python }} --extra dev --extra langgraph
+          else
+            uv sync --locked --python ${{ matrix.python }} --extra dev
+          fi
+      - name: Offline contract suite
+        run: |
+          if [ "${{ matrix.mode }}" = graph ]; then
+            uv run --no-sync python -c "from plutus.agents.advanced_orchestrator import LANGGRAPH_AVAILABLE; assert LANGGRAPH_AVAILABLE"
+          fi
+          uv run --no-sync pytest -q
+      - name: Build and test installed wheel
+        run: |
+          uv build --wheel
+          uv venv --python ${{ matrix.python }} /tmp/plutus-wheel
+          extra=""
+          if [ "${{ matrix.mode }}" = graph ]; then extra="--extra langgraph"; fi
+          uv export --locked --no-dev --no-emit-project --no-hashes $extra --format requirements-txt --output-file /tmp/plutus-runtime.txt
+          uv pip install --python /tmp/plutus-wheel/bin/python -r /tmp/plutus-runtime.txt dist/*.whl
+          cd /tmp
+          /tmp/plutus-wheel/bin/python -I "$GITHUB_WORKSPACE/examples/offline_chat.py"
+      - name: Audit exact runtime dependencies
+        run: |
+          uv venv --python ${{ matrix.python }} --seed /tmp/plutus-audit
+          uv pip install --python /tmp/plutus-audit/bin/python pip-audit==2.9.0
+          /tmp/plutus-audit/bin/python -m pip_audit --no-deps --disable-pip -r /tmp/plutus-runtime.txt --format json --output runtime-audit.json
+      - name: Summarize runtime audit
+        if: always()
+        run: |
+          python - <<'PYCODE'
+          import json
+          from pathlib import Path
+          report = Path("runtime-audit.json")
+          if report.exists():
+              data = json.loads(report.read_text())
+              for dep in data.get("dependencies", []):
+                  if dep.get("vulns"):
+                      print(json.dumps({"name": dep["name"], "version": dep["version"],
+                                        "advisories": [{"id": v["id"], "fix_versions": v.get("fix_versions", [])}
+                                                       for v in dep["vulns"]]}))
+          PYCODE
+      - name: Preserve runtime audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-audit-${{ matrix.python }}-${{ matrix.mode }}
+          path: runtime-audit.json

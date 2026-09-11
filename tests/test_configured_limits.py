@@ -122,7 +122,8 @@ class TestOrchestratorAppliesLimits:
 
         assert result["success"] is False
         assert result["error_type"] == "llm_error"
-        assert "exceeded" in result["error"]
+        assert result["error"] == "The response provider could not complete the request."
+        assert result["request_id"]
 
     @pytest.mark.asyncio
     async def test_a_hung_specialist_does_not_hang_the_conversation(

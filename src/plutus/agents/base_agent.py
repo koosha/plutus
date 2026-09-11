@@ -9,6 +9,7 @@ error handling, monitoring, LLM provider access, and result formatting.
 import time
 import logging
 from typing import Dict, List, Any, Optional
+from .boundaries import failure, financial_amounts
 from abc import ABC, abstractmethod
 
 from ..core.config import get_config
@@ -52,49 +53,36 @@ class BaseAgent(ABC):
         Handles error handling, monitoring, and result formatting
         """
         
-        start_time = time.time()
+        started = time.monotonic()
         self.total_calls += 1
-        
-        self.logger.info(f"{self.agent_name}: Starting execution")
-        
+        result = None
         try:
-            # Execute agent-specific logic
             result = await self._process_core_logic(state)
-            
-            # Calculate execution time
-            execution_time = time.time() - start_time
-            self.total_execution_time += execution_time
-            
-            # Update result metadata
-            result.update({
-                "agent_name": self.agent_name,
-                "agent_type": getattr(self, 'agent_type', 'unknown'),
-                "execution_time": execution_time,
-                "success": True
-            })
-            
-            self.logger.info(
-                f"{self.agent_name}: Completed in {execution_time:.2f}s"
-            )
-            
-            return result
-            
-        except Exception as e:
+            if not isinstance(result, dict) or not result:
+                result = failure("agent_contract_error")
+            elif "success" in result and not isinstance(result["success"], bool):
+                result = failure("agent_contract_error")
+            elif result.get("success") is False:
+                # Preserve structured findings/partial status, but exception
+                # strings and failed prose must never become public advice.
+                result = {**result, **failure(result.get("error_type", "agent_error"))}
+                result.pop("error_message", None)
+            else:
+                result = {**result, "success": True}
+        except Exception as exc:
+            result = failure()
+            self.logger.error("Analysis failed: category=%s request_id=%s",
+                              type(exc).__name__, result["request_id"])
+        finally:
+            elapsed = time.monotonic() - started
+            self.total_execution_time += elapsed
+        if not result["success"]:
             self.total_errors += 1
-            execution_time = time.time() - start_time
-            
-            self.logger.error(f"{self.agent_name}: Failed after {execution_time:.2f}s - {str(e)}")
-            
-            # Return error result
-            return {
-                "agent_name": self.agent_name,
-                "agent_type": getattr(self, 'agent_type', 'unknown'),
-                "success": False,
-                "execution_time": execution_time,
-                "error": str(e),
-                "response": f"I encountered an error while processing your request: {str(e)}"
-            }
-    
+        result.update(agent_name=self.agent_name,
+                      agent_type=getattr(self, 'agent_type', 'unknown'),
+                      execution_time=elapsed)
+        return result
+
     @abstractmethod
     async def _process_core_logic(self, state: ConversationState) -> Dict[str, Any]:
         """
@@ -130,7 +118,8 @@ class BaseAgent(ABC):
             max_output_tokens=max_output_tokens or self.config.max_output_tokens,
             temperature=self.config.llm_temperature,
         )
-        self.total_api_cost += completion.cost
+        if completion.cost is not None:
+            self.total_api_cost += completion.cost
         return completion
 
     def parse_json_response(self, content: str) -> Optional[Dict[str, Any]]:
@@ -153,7 +142,7 @@ class BaseAgent(ABC):
             return json.loads(json_content)
             
         except json.JSONDecodeError as e:
-            self.logger.error(f"{self.agent_name}: JSON parsing error - {str(e)}")
+            self.logger.warning("Response JSON could not be decoded")
             return None
     
     def get_performance_metrics(self) -> Dict[str, Any]:
@@ -176,40 +165,9 @@ class BaseAgent(ABC):
         }
     
     def extract_financial_amounts(self, text: str) -> List[float]:
-        """Extract monetary amounts from text"""
-        
-        import re
-        
-        # Pattern to match various money formats
-        money_patterns = [
-            r'\$([0-9,]+(?:\.[0-9]{2})?)',           # $1,000.00
-            r'([0-9,]+(?:\.[0-9]{2})?) dollars',    # 1000 dollars
-            r'([0-9,]+)k',                          # 50k
-            r'([0-9,]+) thousand',                  # 50 thousand
-        ]
-        
-        amounts = []
-        
-        for pattern in money_patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for match in matches:
-                try:
-                    # Clean up the match
-                    clean_amount = match.replace(',', '')
-                    amount = float(clean_amount)
-                    
-                    # Convert k notation
-                    if 'k' in match.lower():
-                        amount *= 1000
-                    elif 'thousand' in match.lower():
-                        amount *= 1000
-                    
-                    amounts.append(amount)
-                except ValueError:
-                    continue
-        
-        return amounts
-    
+        """Compatibility entry point for the shared money parser."""
+        return financial_amounts(text)
+
     def extract_time_references(self, text: str) -> List[str]:
         """Extract time references from text"""
         

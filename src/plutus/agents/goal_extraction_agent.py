@@ -21,13 +21,14 @@ import json
 import re
 
 from .base_agent import BaseAgent
-from .mixins import TextParsingMixin, ResponseFormattingMixin, ClaudePromptMixin
+from .boundaries import failure, number, measurement
+from .mixins import TextParsingMixin, ResponseFormattingMixin
 from ..models.state import ConversationState
 
 logger = logging.getLogger(__name__)
 
 
-class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin, ClaudePromptMixin):
+class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin):
     """
     Advanced agent for extracting and managing financial goals from conversations.
     
@@ -162,8 +163,8 @@ class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin, 
             return agent_result
             
         except Exception as e:
-            logger.error(f"❌ Goal Extraction Agent error: {e}")
-            return self._create_error_response(f"Goal extraction failed: {str(e)}")
+            logger.error("Specialist failed: category=%s", type(e).__name__)
+            return self._create_error_response("analysis_failed")
     
     async def _analyze_message_for_goals(self, message: str) -> Dict[str, Any]:
         """Analyze if the message is related to financial goals"""
@@ -193,13 +194,13 @@ class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin, 
         
         # Determine intent
         intent = "unknown"
-        if any("save" in message_lower or "saving" in message_lower for _ in [1]):
+        if "save" in message_lower or "saving" in message_lower:
             intent = "saving_for_goal"
-        elif any("plan" in message_lower or "planning" in message_lower for _ in [1]):
+        elif "plan" in message_lower or "planning" in message_lower:
             intent = "planning_goal"
-        elif any("want" in message_lower or "hoping" in message_lower for _ in [1]):
+        elif "want" in message_lower or "hoping" in message_lower:
             intent = "expressing_goal"
-        elif any("how much" in message_lower or "when" in message_lower for _ in [1]):
+        elif "how much" in message_lower or "when" in message_lower:
             intent = "asking_about_goal"
         elif goal_keywords_found:
             intent = "discussing_goal"
@@ -234,21 +235,8 @@ class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin, 
         message_lower = message.lower()
         
         # Extract amounts
-        amount_pattern = r'\$?([\d,]+(?:\.\d{2})?)\s*(?:thousand|million|k|m)?'
-        amounts = []
-        for match in re.finditer(amount_pattern, message_lower):
-            amount_str = match.group(1).replace(',', '')
-            try:
-                amount = float(amount_str)
-                # Handle k/m suffixes
-                if 'thousand' in match.group(0) or 'k' in match.group(0):
-                    amount *= 1000
-                elif 'million' in match.group(0) or 'm' in match.group(0):
-                    amount *= 1000000
-                amounts.append(amount)
-            except ValueError:
-                continue
-        
+        amounts = self.extract_financial_amounts(message)
+
         # Extract timeframes
         time_pattern = r'(?:in\s+)?(\d+)\s*(year|month|week)s?'
         timeframes = []
@@ -355,8 +343,8 @@ class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin, 
             for goal in user_context.get("goals", []) + extracted_goals
         )
         
-        if not has_emergency_fund:
-            monthly_expenses = user_context.get("monthly_expenses", 3000)
+        if not has_emergency_fund and measurement(user_context, "monthly_expenses") is not None:
+            monthly_expenses = measurement(user_context, "monthly_expenses")
             recommended_amount = monthly_expenses * 6  # 6 months of expenses
             
             recommendations.append({
@@ -370,10 +358,10 @@ class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin, 
             })
         
         # Check retirement savings
-        user_age = user_context.get("age", 30)
-        monthly_income = user_context.get("monthly_income", 5000)
+        user_age = number(user_context.get("age"))
+        monthly_income = measurement(user_context, "monthly_income")
         
-        if user_age < 50:  # Focus on retirement for younger users
+        if user_age is not None and monthly_income is not None and user_age < 50:  # Focus on retirement for younger users
             has_retirement_goal = any(
                 goal.get("type") == "retirement"
                 for goal in user_context.get("goals", []) + extracted_goals
@@ -482,7 +470,7 @@ class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin, 
             "agent_name": self.agent_name,
             "agent_type": self.agent_type,
             "success": False,
-            "error": error_message,
+            **failure(),
             "response": "I encountered an issue while analyzing your goals. Please try again.",
             "processing_time": 0.0,
             "timestamp": datetime.utcnow().isoformat()

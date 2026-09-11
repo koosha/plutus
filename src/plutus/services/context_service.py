@@ -100,21 +100,8 @@ class ContextService:
         In production, this would query the conversation database
         """
         
-        # For now, add some sample conversation insights
-        context.recent_topics = [
-            "retirement planning",
-            "emergency fund",
-            "investment allocation"
-        ]
-        
-        context.common_questions = [
-            "How much should I save for retirement?",
-            "What's my investment risk level?",
-            "Should I pay off debt or invest?"
-        ]
-        
         return context
-    
+
     async def _add_realtime_analysis(self, context: UserContext) -> UserContext:
         """Add real-time financial analysis to context"""
         
@@ -149,7 +136,7 @@ class ContextService:
             context.last_updated = datetime.now()
             
         except Exception as e:
-            logger.error(f"Error in real-time analysis: {e}")
+            logger.error("Context operation failed: category=%s", type(e).__name__)
         
         return context
     
@@ -181,7 +168,7 @@ class ContextService:
             logger.info(f"Updated context for user {user_id} with {len(insights)} new insights")
             
         except Exception as e:
-            logger.error(f"Error updating context from conversation: {e}")
+            logger.error("Context operation failed: category=%s", type(e).__name__)
     
     def _extract_conversation_insights(self, state: ConversationState) -> Dict[str, Any]:
         """Extract insights from conversation state"""
