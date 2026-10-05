@@ -51,6 +51,75 @@ python examples/offline_chat.py
 
 CI also runs this example in an isolated wheel environment outside the source checkout, ensuring that source-path injection cannot hide packaging omissions. The public `plutus.PlutusOrchestrator` and historical `plutus.agents.orchestrator.PlutusOrchestrator` imports remain supported.
 
+## Models and pricing
+
+`OpenAIProvider` sends one Chat Completions request per answer through the model provider's official async SDK. It dispatches only models with a reviewed price: a listed family name, alone or with a dated snapshot suffix (`-YYYY-MM-DD`, for example `gpt-5.6-terra-2026-10-01`). For any other name `maximum_cost()` returns `None`, so a host can refuse before reserving spend, and `complete()` raises `LLMModelNotPricedError` before a request is sent.
+
+Standard text prices, USD per million tokens, checked on 2026-10-04 (`plutus.llm.pricing.PRICING_VERSION` names this table):
+
+| Model | Input | Output | Cached input (not modelled) |
+| --- | --- | --- | --- |
+| `gpt-5` | 1.25 | 10.00 | 0.125 |
+| `gpt-5-mini` | 0.25 | 2.00 | 0.025 |
+| `gpt-5-nano` | 0.05 | 0.40 | 0.005 |
+| `gpt-5.6-luna` | 0.20 | 1.20 | 0.02 |
+| `gpt-5.6-terra` | 2.00 | 12.00 | 0.20 |
+| `gpt-5.6-sol` | 4.00 | 20.00 | 0.40 |
+| `gpt-6-luna` | 0.10 | 0.50 | 0.01 |
+| `gpt-6-sol` | 2.00 | 10.00 | 0.20 |
+
+Every input token is charged at the uncached rate, so a settled cost is an upper bound when the provider serves cached input. The 5.6 and 6 families cost 2x input and 1.5x output above 272K input tokens; Plutus bounds each request far below that. The provider's model pages, checked on 2026-10-05, list Chat Completions support for all five newer families and publish no dated snapshots for them yet. Whether each model accepts the request parameters (`max_completion_tokens`, temperature omitted by default) and produces usable output within the output budget is not established by these tests; that needs a live qualification run.
+
+## Provider errors
+
+Every provider failure is a subclass of `LLMResponseError`, so existing `except LLMResponseError` and `except LLMError` clauses still catch it. Each exposes a stable `category` and a `retryable` flag:
+
+| Category | Error class | Retryable | Meaning |
+| --- | --- | --- | --- |
+| `authentication_failed` | `LLMAuthenticationError` | no | Invalid or revoked key, or the key may not use the model (401, 403) |
+| `quota_exhausted` | `LLMQuotaExhaustedError` | no | The account's quota or billing allows no more requests |
+| `rate_limited` | `LLMRateLimitError` | yes | Request or token rate limit; `retry_after` from `retry-after-ms` or `retry-after` |
+| `provider_unavailable` | `LLMProviderUnavailableError` | yes | 5xx, overload, conflict, or no connection |
+| `timeout` | `LLMTimeoutError` | yes | No complete response within the configured time |
+| `model_not_found` | `LLMModelNotFoundError` | no | The model does not exist or is not served on this endpoint (404) |
+| `invalid_request` | `LLMInvalidRequestError` | no | The provider rejected the request itself, for example a parameter (400, 413, 422) |
+| `empty_completion` | `LLMEmptyCompletionError` | no | No text, or no choices |
+| `truncated_completion` | `LLMTruncatedCompletionError` | no | Output stopped at the output-token limit (`finish_reason` `length`) |
+| `content_filtered` | `LLMContentFilteredError` | no | Output filtered, or the model refused without an answer |
+| `malformed_completion` | `LLMMalformedCompletionError` | no | Text that does not satisfy the requested output contract |
+| `provider_error` | `LLMResponseError` | no | Any other failure |
+
+`LLMNotConfiguredError` (`not_configured`) and its subclass `LLMModelNotPricedError` (`model_not_priced`) mean no request could be made. Retryable means only that an identical request may succeed later without operator action; output failures are not retryable because a repeat is likely to fail the same way and is charged again. A truncated, empty or filtered completion is never returned as a partial success. Its error carries the paid usage in `error.completion` (text removed) so the host can settle the actual cost. Error messages are fixed text; provider error bodies are not copied into them.
+
+## Host-supplied system prompt
+
+The host may supply the synthesis system prompt and a version id for it, so a prompt it has evaluated can change without a package release:
+
+```python
+orchestrator = PlutusOrchestrator(
+    provider=your_provider,
+    system_prompt=host_chat_prompt,
+    brief_system_prompt=host_brief_prompt,  # optional
+    prompt_version="host-chat-2026-10-05",
+)
+```
+
+With no arguments the package default `ADVISOR_SYSTEM_PROMPT` is used unchanged, under version `package-default`. Without `brief_system_prompt`, the brief prompt is the chat prompt up to its `Output contract` section followed by the package's brief card contract. A host prompt requires its own version id (1-64 letters, digits, `.`, `_`, `:` or `-`, never `package-default`), and a version id other than `package-default` requires a host prompt, so answers cannot be attributed to the wrong prompt. Each prompt sent is at most 8,192 UTF-8 bytes, which together with the 24,000-byte user prompt keeps a request's input below 32,768 tokens. Invalid prompt settings raise `ValueError` when the orchestrator is constructed. Prompt text never appears in results, logs or error messages.
+
+## Result metadata
+
+Every result from `process_message` records `metadata["prompt_version"]`. When a completion was received, including a charged completion that was then rejected, `metadata["llm"]` contains:
+
+- `model`: the model the provider reports having served, and `requested_model`: the name that was asked for (`None` when the provider does not say);
+- `input_tokens`, `output_tokens`, `api_cost`, `cost_status` and `pricing_version`;
+- `rate_limit`: the provider's `limit`, `remaining` and `reset` values for requests and tokens (`limit_requests`, `remaining_requests`, `reset_requests_seconds`, `limit_tokens`, `remaining_tokens`, `reset_tokens_seconds`), read from the same response, or `None` when not reported. A header that is absent or does not parse is `None`, never zero.
+
+On failure, `error_type` keeps its existing values (`llm_error`, `llm_not_configured`, `orchestration_error`). Provider-layer failures add `metadata["error_category"]` and `metadata["retryable"]`, plus `retry_after_seconds` and the refused request's `rate_limit` when the provider stated them.
+
+## Financial inputs
+
+Account `interest_rate` values may be percentages (24.99) or fractions (0.2499). A context may state the scale with `interest_rate_unit` (`percent` or `fraction`); without it, a value greater than 1 is read as a percentage. Missing, negative or unrecognised rates are unknown and are not treated as zero. Every specialist reads rates through `plutus.agents.boundaries.apr_fraction`.
+
 ## Verification boundaries
 
 Unit and integration tests use injected providers and synthetic data. They verify contracts and failure handling without paid model calls. They do not establish live-model answer quality, production availability, or suitability of financial advice. Host integration and opt-in provider evaluations must record their actual modes and model versions.
