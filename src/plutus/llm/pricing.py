@@ -13,12 +13,24 @@ Prices are the model provider's published standard-tier rates, checked on
                                     gpt-6-luna     0.10 /  0.50
                                     gpt-6-sol      2.00 / 10.00
 
-Two published rules are deliberately not modelled:
+The 5.6 and 6 families also bill input written to the prompt cache at 1.25x
+the uncached input rate (cache writes: gpt-5.6-luna 0.25, gpt-5.6-terra 2.50,
+gpt-5.6-sol 5.00, gpt-6-luna 0.125, gpt-6-sol 2.50). Prompt caching is on by
+default and writes the prompt up to its latest message, so on these families
+most input of a large prompt is billed at that rate. The gpt-5 family has no
+cache-write charge.
+
+Each input token is charged here at the highest rate the provider can bill
+for it: the cache-write rate where the family has one, otherwise the uncached
+rate. `maximum_cost()` is therefore a true ceiling for a request, and a
+settled cost is an upper bound of the bill. Two published rules lower the
+bill and are deliberately not modelled:
 
 - Cached input is billed below the input rate (gpt-5-mini 0.025,
   gpt-5.6-luna 0.02, gpt-6-luna 0.01, gpt-5.6-terra 0.20, gpt-5.6-sol 0.40,
-  gpt-6-sol 0.20). Every input token is charged here at the uncached rate, so
-  settled costs are an upper bound when the provider serves cached input.
+  gpt-6-sol 0.20). Settling from the provider's cached and written token
+  counts would be cheaper but depends on how those counts overlap, so it is
+  left out rather than risk under-stating spend.
 - Prompts above 272K input tokens on the 5.6 and 6 families cost 2x input and
   1.5x output. Plutus bounds a request's input far below that threshold.
 """
@@ -41,6 +53,16 @@ MODEL_COST_RATES: Dict[str, Tuple[float, float]] = {
     "gpt-6-sol": (2.00e-6, 10.00e-6),
 }
 
+# USD per single input token written to the prompt cache, for the families
+# that charge for cache writes (published as 1.25x the uncached input rate).
+CACHE_WRITE_RATES: Dict[str, float] = {
+    "gpt-5.6-luna": 0.25e-6,
+    "gpt-5.6-terra": 2.50e-6,
+    "gpt-5.6-sol": 5.00e-6,
+    "gpt-6-luna": 0.125e-6,
+    "gpt-6-sol": 2.50e-6,
+}
+
 _SNAPSHOT_SUFFIX = r"(?:-[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01]))?"
 _PRICED_NAME = re.compile(
     "(" + "|".join(re.escape(family) for family in MODEL_COST_RATES) + ")" + _SNAPSHOT_SUFFIX
@@ -59,13 +81,23 @@ def is_priced(model: Any) -> bool:
     return model_family(model) is not None
 
 
+def highest_input_rate(family: str) -> float:
+    """The most the provider can bill for one input token of a priced family."""
+    input_rate, _ = MODEL_COST_RATES[family]
+    return max(input_rate, CACHE_WRITE_RATES.get(family, input_rate))
+
+
 def cost_for(model: Any, input_tokens: int, output_tokens: int) -> Optional[float]:
-    """Versioned text pricing; unrecognized models have explicitly unknown cost."""
+    """Versioned text pricing that never under-states the bill.
+
+    Every input token is charged at `highest_input_rate`. Unrecognized models
+    have explicitly unknown cost.
+    """
     family = model_family(model)
     if family is None:
         return None
     if any(isinstance(value, bool) or not isinstance(value, int) or value < 0
            for value in (input_tokens, output_tokens)):
         return None
-    input_rate, output_rate = MODEL_COST_RATES[family]
-    return input_tokens * input_rate + output_tokens * output_rate
+    _, output_rate = MODEL_COST_RATES[family]
+    return input_tokens * highest_input_rate(family) + output_tokens * output_rate

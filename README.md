@@ -57,18 +57,18 @@ CI also runs this example in an isolated wheel environment outside the source ch
 
 Standard text prices, USD per million tokens, checked on 2026-10-04 (`plutus.llm.pricing.PRICING_VERSION` names this table):
 
-| Model | Input | Output | Cached input (not modelled) |
-| --- | --- | --- | --- |
-| `gpt-5` | 1.25 | 10.00 | 0.125 |
-| `gpt-5-mini` | 0.25 | 2.00 | 0.025 |
-| `gpt-5-nano` | 0.05 | 0.40 | 0.005 |
-| `gpt-5.6-luna` | 0.20 | 1.20 | 0.02 |
-| `gpt-5.6-terra` | 2.00 | 12.00 | 0.20 |
-| `gpt-5.6-sol` | 4.00 | 20.00 | 0.40 |
-| `gpt-6-luna` | 0.10 | 0.50 | 0.01 |
-| `gpt-6-sol` | 2.00 | 10.00 | 0.20 |
+| Model | Input | Cache writes | Output | Cached input (not modelled) |
+| --- | --- | --- | --- | --- |
+| `gpt-5` | 1.25 | none | 10.00 | 0.125 |
+| `gpt-5-mini` | 0.25 | none | 2.00 | 0.025 |
+| `gpt-5-nano` | 0.05 | none | 0.40 | 0.005 |
+| `gpt-5.6-luna` | 0.20 | 0.25 | 1.20 | 0.02 |
+| `gpt-5.6-terra` | 2.00 | 2.50 | 12.00 | 0.20 |
+| `gpt-5.6-sol` | 4.00 | 5.00 | 20.00 | 0.40 |
+| `gpt-6-luna` | 0.10 | 0.125 | 0.50 | 0.01 |
+| `gpt-6-sol` | 2.00 | 2.50 | 10.00 | 0.20 |
 
-Every input token is charged at the uncached rate, so a settled cost is an upper bound when the provider serves cached input. The 5.6 and 6 families cost 2x input and 1.5x output above 272K input tokens; Plutus bounds each request far below that. The provider's model pages, checked on 2026-10-05, list Chat Completions support for all five newer families and publish no dated snapshots for them yet. Whether each model accepts the request parameters (`max_completion_tokens`, temperature omitted by default) and produces usable output within the output budget is not established by these tests; that needs a live qualification run.
+Prompt caching is on by default. The 5.6 and 6 families bill input written to the cache at 1.25x the uncached input rate, and caching writes a prompt up to its latest message, so most input of a large prompt is billed at that rate; the gpt-5 family has no cache-write charge. Plutus charges every input token at the highest rate the provider can bill for it: the cache-write rate where the family has one, otherwise the uncached rate. `maximum_cost()` is therefore a true ceiling for the host's reservation, and a settled cost is an upper bound of the bill. The bill is lower when input is served from the cache, or on the 5.6 and 6 families is not written to it; those discounts are not modelled. The 5.6 and 6 families cost 2x input and 1.5x output above 272K input tokens; Plutus bounds each request far below that. The provider's model pages, checked on 2026-10-05, list Chat Completions support for all five newer families and publish no dated snapshots for them yet. Whether each model accepts the request parameters (`max_completion_tokens`, temperature omitted by default) and produces usable output within the output budget is not established by these tests; that needs a live qualification run.
 
 ## Provider errors
 

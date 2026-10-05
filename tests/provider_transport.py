@@ -30,10 +30,18 @@ def chat_body(
     completion_tokens: int = 4,
     refusal: Optional[str] = None,
     choices: Optional[List[Dict[str, Any]]] = None,
+    prompt_tokens_details: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
     message: Dict[str, Any] = {"role": "assistant", "content": content}
     if refusal is not None:
         message["refusal"] = refusal
+    usage: Dict[str, Any] = {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": prompt_tokens + completion_tokens,
+    }
+    if prompt_tokens_details is not None:
+        usage["prompt_tokens_details"] = prompt_tokens_details
     return {
         "id": "chatcmpl-synthetic",
         "object": "chat.completion",
@@ -42,11 +50,7 @@ def chat_body(
         "choices": choices if choices is not None else [
             {"index": 0, "message": message, "finish_reason": finish_reason}
         ],
-        "usage": {
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "total_tokens": prompt_tokens + completion_tokens,
-        },
+        "usage": usage,
     }
 
 
