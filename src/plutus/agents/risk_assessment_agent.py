@@ -23,11 +23,14 @@ import json
 import math
 
 from .base_agent import BaseAgent
-from .boundaries import failure, number, measurement, known_accounts, unknown_assessment, is_liability, is_liquid
+from .boundaries import account_apr, failure, number, measurement, known_accounts, unknown_assessment, is_liability, is_liquid
 from ..models.state import ConversationState, UserContext
 from ..core.config import get_config
 
 logger = logging.getLogger(__name__)
+
+# Debt above this APR (as a fraction: 0.20 is 20%) counts as high-interest.
+HIGH_INTEREST_APR = 0.20
 
 
 class RiskAssessmentAgent(BaseAgent):
@@ -355,7 +358,7 @@ class RiskAssessmentAgent(BaseAgent):
         accounts = known_accounts(user_context)
         if monthly_income is None or monthly_income <= 0 or accounts is None:
             return unknown_assessment("monthly_income", "eligible_accounts")
-        if any(number(item.get("interest_rate")) is None for item in accounts if is_liability(item)):
+        if any(account_apr(item) is None for item in accounts if is_liability(item)):
             return unknown_assessment("debt_interest_rates")
         
         # Calculate total debt
@@ -372,9 +375,8 @@ class RiskAssessmentAgent(BaseAgent):
         
         for debt in debt_accounts:
             balance = abs(debt.get("balance", 0))
-            interest_rate = debt.get("interest_rate", 0.15)  # Assume 15% if not specified
-            
-            if interest_rate > 0.20:  # High interest debt (credit cards)
+            # Every liability rate is known here (checked above).
+            if account_apr(debt) > HIGH_INTEREST_APR:  # High interest debt (credit cards)
                 high_interest_debt += balance
                 # Assume minimum payment of 2% of balance
                 estimated_monthly_payments += balance * 0.02

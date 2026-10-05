@@ -31,6 +31,32 @@ def number(value):
         return None
 
 
+APR_UNITS = ('percent', 'fraction')
+
+
+def apr_fraction(value, unit=None):
+    """An annual percentage rate as a fraction: 24.99% becomes 0.2499.
+
+    `unit` is 'percent' or 'fraction' when the source states it. Without a
+    stated unit, a value greater than 1 is a percentage and a value of 1 or
+    less is a fraction. Missing, negative, non-finite or unrecognised-unit
+    rates are unknown (None), never zero.
+    """
+    rate = number(value)
+    if rate is None or rate < 0:
+        return None
+    if unit is None:
+        return rate / 100 if rate > 1 else rate
+    if unit not in APR_UNITS:
+        return None
+    return rate / 100 if unit == 'percent' else rate
+
+
+def account_apr(account):
+    """An account's APR as a fraction, honouring an optional interest_rate_unit."""
+    return apr_fraction(account.get('interest_rate'), account.get('interest_rate_unit'))
+
+
 def measurement(context, key):
     """Read the canonical snapshot with legacy top-level compatibility."""
     domain = {'net_worth': 'net_worth', 'monthly_income': 'income', 'monthly_expenses': 'expenses'}.get(key)

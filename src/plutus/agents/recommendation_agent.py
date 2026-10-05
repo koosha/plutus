@@ -21,11 +21,14 @@ from datetime import datetime, timedelta
 import json
 
 from .base_agent import BaseAgent
-from .boundaries import failure, number, measurement, known_accounts, is_liability, is_liquid
+from .boundaries import account_apr, failure, number, measurement, known_accounts, is_liability, is_liquid
 from ..models.state import ConversationState, UserContext
 from ..core.config import get_config
 
 logger = logging.getLogger(__name__)
+
+# Debt above this APR (as a fraction: 0.15 is 15%) is prioritised for payoff.
+HIGH_INTEREST_APR = 0.15
 
 
 class RecommendationAgent(BaseAgent):
@@ -295,10 +298,11 @@ class RecommendationAgent(BaseAgent):
         total_debt = sum(abs(acc.get("balance", 0)) for acc in debt_accounts)
         monthly_income = measurement(user_context, "monthly_income")
         
-        # High interest debt check
+        # High interest debt check (credit cards typically); unknown rates
+        # are not counted as high.
         high_interest_debt = [
-            acc for acc in debt_accounts 
-            if number(acc.get("interest_rate")) is not None and acc["interest_rate"] > 15  # Credit cards typically
+            acc for acc in debt_accounts
+            if account_apr(acc) is not None and account_apr(acc) > HIGH_INTEREST_APR
         ]
         
         if high_interest_debt:
