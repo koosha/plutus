@@ -239,6 +239,30 @@ class TestCategories:
         assert (error.retry_after, error.rate_limit, error.completion, error.status_code) == (
             None, None, None, None)
 
+    def test_extra_positional_arguments_are_kept_as_in_1_1_0(self):
+        """1.1.0 handed every positional argument to Exception."""
+        error = LLMResponseError("upstream failed", 502)
+        assert error.args == ("upstream failed", 502)
+        assert str(error) == str(Exception("upstream failed", 502))
+        assert error.retry_after is None
+
+    def test_no_arguments_match_a_bare_exception(self):
+        assert LLMResponseError().args == Exception().args == ()
+        assert str(LLMResponseError()) == ""
+
+    def test_a_subclass_takes_positional_arguments_beside_its_details(self):
+        error = LLMRateLimitError("limited", "tokens", retry_after=2.0)
+        assert error.args == ("limited", "tokens")
+        assert (error.category, error.retry_after) == ("rate_limited", 2.0)
+
+    def test_a_multi_argument_error_survives_pickling(self):
+        import pickle
+
+        copy = pickle.loads(pickle.dumps(LLMRateLimitError("limited", "tokens", retry_after=2.0)))
+        assert type(copy) is LLMRateLimitError
+        assert copy.args == ("limited", "tokens")
+        assert copy.retry_after == 2.0
+
 
 class TestHeaderParsing:
     @pytest.mark.parametrize("text,seconds", [

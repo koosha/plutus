@@ -43,6 +43,10 @@ class LLMModelNotPricedError(LLMNotConfiguredError):
 class LLMResponseError(LLMError):
     """The upstream API call failed or returned an unusable response.
 
+    Positional arguments go to Exception unchanged, as in 1.1.0, so a host
+    that raises this error with several arguments keeps working. The details
+    below are keyword-only.
+
     Attributes:
         retry_after: seconds the provider asked callers to wait, when stated.
         rate_limit: the provider's rate-limit headers on the failed response.
@@ -53,14 +57,13 @@ class LLMResponseError(LLMError):
 
     def __init__(
         self,
-        message: str = "",
-        *,
+        *args: object,
         retry_after: Optional[float] = None,
         rate_limit: "Optional[RateLimitSnapshot]" = None,
         completion: "Optional[LLMCompletion]" = None,
         status_code: Optional[int] = None,
     ):
-        super().__init__(message)
+        super().__init__(*args)
         self.retry_after = retry_after
         self.rate_limit = rate_limit
         self.completion = completion

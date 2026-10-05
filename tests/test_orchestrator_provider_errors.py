@@ -69,6 +69,16 @@ class TestFailureCategories:
         assert result["metadata"]["error_category"] == "provider_error"
         assert result["metadata"]["retryable"] is False
 
+    async def test_a_host_error_raised_with_several_arguments_is_an_llm_error(self):
+        """A 1.1.0 host provider may pass more than one argument."""
+        class HostProvider(FakeProvider):
+            async def complete(self, messages, **kwargs):
+                raise LLMResponseError("upstream failed", 502)
+
+        result = await ask(HostProvider())
+        assert result["error_type"] == "llm_error"
+        assert result["metadata"]["error_category"] == "provider_error"
+
     async def test_retry_after_and_refusal_headers_reach_the_metadata(self):
         snapshot = RateLimitSnapshot(limit_requests=500, remaining_requests=0,
                                      reset_requests_seconds=2.5)
