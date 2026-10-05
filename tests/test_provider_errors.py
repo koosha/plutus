@@ -256,6 +256,11 @@ class TestHeaderParsing:
     def test_retry_after_prefers_milliseconds(self):
         assert retry_after_from_headers({"retry-after-ms": "250", "retry-after": "9"}) == 0.25
 
+    @pytest.mark.parametrize("milliseconds", ["-1", "nan", "inf", "soon", "999999999999"])
+    def test_an_unusable_millisecond_value_falls_back_to_seconds(self, milliseconds):
+        headers = {"retry-after-ms": milliseconds, "retry-after": "4"}
+        assert retry_after_from_headers(headers) == 4.0
+
     def test_retry_after_accepts_an_http_date(self):
         now = datetime(2026, 10, 21, 7, 27, 30, tzinfo=timezone.utc)
         headers = {"Retry-After": "Wed, 21 Oct 2026 07:28:00 GMT"}

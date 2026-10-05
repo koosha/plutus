@@ -101,30 +101,33 @@ def _bounded_wait(seconds: float) -> Optional[float]:
     return seconds
 
 
+def _numeric_wait(text: Optional[str], scale: float) -> Optional[float]:
+    if text is None:
+        return None
+    try:
+        return _bounded_wait(float(text) * scale)
+    except ValueError:
+        return None
+
+
 def retry_after_from_headers(
     headers: Any, *, now: Optional[datetime] = None
 ) -> Optional[float]:
     """Seconds to wait before retrying, from retry-after-ms or retry-after.
 
-    Milliseconds win when both are present. retry-after may be a number of
-    seconds or an HTTP date; a date in the past means "now" (0 seconds).
+    The first usable value wins: milliseconds, then seconds, then an HTTP
+    date in retry-after, where a date in the past means "now" (0 seconds).
     """
     values: Optional[Mapping[str, str]] = _lowercased(headers)
     if not values:
         return None
-    milliseconds = values.get("retry-after-ms")
-    if milliseconds is not None:
-        try:
-            return _bounded_wait(float(milliseconds) / 1000)
-        except ValueError:
-            pass
+    for name, scale in (("retry-after-ms", 0.001), ("retry-after", 1.0)):
+        wait = _numeric_wait(values.get(name), scale)
+        if wait is not None:
+            return wait
     stated = values.get("retry-after")
     if stated is None:
         return None
-    try:
-        return _bounded_wait(float(stated))
-    except ValueError:
-        pass
     try:
         moment = parsedate_to_datetime(stated)
     except (TypeError, ValueError, IndexError):
