@@ -34,18 +34,23 @@ except ImportError:
 
 from .base_agent import BaseAgent
 from .boundaries import failure
+from .llm_metadata import completion_metadata, failure_metadata
 from .prompt_context import compose_prompt
 from .financial_analysis_agent import FinancialAnalysisAgent
 from .goal_extraction_agent import GoalExtractionAgent
 from .recommendation_agent import RecommendationAgent
 from .risk_assessment_agent import RiskAssessmentAgent
+# ADVISOR_SYSTEM_PROMPT stays importable from this module for integrators.
+from .system_prompts import ADVISOR_SYSTEM_PROMPT, resolve_prompts  # noqa: F401
 from dataclasses import asdict
 
 from ..llm import (
+    LLMEmptyCompletionError,
     LLMError,
+    LLMMalformedCompletionError,
     LLMNotConfiguredError,
     LLMProvider,
-    LLMResponseError,
+    LLMTimeoutError,
     OpenAIProvider,
 )
 from ..models.state import AgentResult, ConversationState, UserContext
@@ -54,33 +59,32 @@ from ..core.config import get_config
 
 logger = logging.getLogger(__name__)
 
-# Educational-scope guardrails + output contract for the synthesis call.
-# Every real completion goes through this system prompt.
-ADVISOR_SYSTEM_PROMPT = """You are Plutus, the AI financial guide inside the Wealthify app.
-
-Strict scope and safety rules:
-- Provide educational, general financial information grounded ONLY in the user data supplied in the request. Do not invent numbers that are not present; say plainly when data is missing.
-- Missing, withheld, failed or omitted context is unknown, never zero. Respect availability/provenance and prompt_metadata; heuristic findings are limited to their stated evidence and policy.
-- Do NOT give individualized investment advice: never recommend buying, selling, or holding any specific security, fund, or asset. Discuss categories, trade-offs, and widely accepted principles instead.
-- Never claim to execute trades, move money, open or close accounts, or take any action. You cannot take actions.
-- For decisions with tax, legal, or large financial consequences, remind the user to consult a licensed professional.
-- Keep a supportive, plain-language tone; be concise.
-
-Output contract — respond with a single JSON object and nothing else (no markdown fences):
-{"response": string, "insights": [string, ...], "recommendations": [string, ...], "confidence": number}
-- "response": the reply shown to the user (plain text, may use simple bullet lines).
-- "insights": up to 5 short observations grounded in the data (may be empty).
-- "recommendations": up to 5 short educational next steps (may be empty).
-- "confidence": 0..1, your confidence given the data completeness."""
-
 
 class AdvancedOrchestrator(BaseAgent):
     """
     Advanced orchestrator that coordinates multiple specialized agents
     using LangGraph for sophisticated conversation workflows.
     """
-    
-    def __init__(self, provider: Optional[LLMProvider] = None):
+
+    def __init__(
+        self,
+        provider: Optional[LLMProvider] = None,
+        *,
+        system_prompt: Optional[str] = None,
+        brief_system_prompt: Optional[str] = None,
+        prompt_version: Optional[str] = None,
+    ):
+        """
+        Args:
+            provider: the completion provider; built from the environment
+                when omitted.
+            system_prompt / brief_system_prompt / prompt_version: host-owned
+                synthesis prompts and the version id that names them. All
+                omitted means the package default prompt, version
+                "package-default". See plutus.agents.system_prompts.
+        """
+        # Invalid prompt configuration fails before any client is built.
+        self.prompts = resolve_prompts(system_prompt, brief_system_prompt, prompt_version)
         config = get_config()
 
         # Resolve the LLM provider: explicit injection wins (tests, custom
@@ -203,6 +207,7 @@ class AdvancedOrchestrator(BaseAgent):
                 return self._create_error_response(
                     "LLM provider is not configured (set OPENAI_API_KEY)",
                     error_type="llm_not_configured",
+                    error=LLMNotConfiguredError(),
                 )
 
             # 1. Build conversation state
@@ -235,7 +240,7 @@ class AdvancedOrchestrator(BaseAgent):
                     timeout=self.config.llm_deadline_seconds,
                 )
             except asyncio.TimeoutError as exc:
-                raise LLMResponseError(
+                raise LLMTimeoutError(
                     "LLM synthesis exceeded "
                     f"{self.config.llm_deadline_seconds:.0f}s"
                 ) from exc
@@ -248,11 +253,14 @@ class AdvancedOrchestrator(BaseAgent):
             return result
 
         except LLMNotConfiguredError as e:
-            logger.warning("Response provider is not configured")
-            return self._create_error_response("provider_failed", error_type="llm_not_configured", workflow_result=result)
+            logger.warning("Response provider is not configured: category=%s", e.category)
+            return self._create_error_response("provider_failed", error_type="llm_not_configured",
+                                               workflow_result=result, error=e)
         except LLMError as e:
-            logger.error("Response provider failed: category=%s", type(e).__name__)
-            return self._create_error_response("provider_failed", error_type="llm_error", workflow_result=result)
+            logger.error("Response provider failed: category=%s type=%s",
+                         e.category, type(e).__name__)
+            return self._create_error_response("provider_failed", error_type="llm_error",
+                                               workflow_result=result, error=e)
         except Exception as e:
             logger.error("Orchestration failed: category=%s", type(e).__name__)
             return self._create_error_response("analysis_failed", workflow_result=result)
@@ -462,43 +470,36 @@ class AdvancedOrchestrator(BaseAgent):
         """Produce the user-facing answer with ONE real LLM completion.
 
         The specialists' deterministic analyses plus the user's financial
-        context become the user prompt; ADVISOR_SYSTEM_PROMPT carries the
-        educational-scope guardrails and the JSON output contract. The
+        context become the user prompt; the system prompt (the host's, or
+        the package default ADVISOR_SYSTEM_PROMPT) carries the
+        educational-scope guardrails and the output contract. The
         completion is parsed and validated into an AgentResult that is
         appended to agent_results, and its "response" replaces the template
         synthesis.
 
         Raises:
-            LLMNotConfiguredError / LLMResponseError: bubbled to
-            process_message, which maps them to typed error responses.
+            LLMNotConfiguredError / LLMResponseError (and its typed
+            subclasses): bubbled to process_message, which maps them to
+            error responses that carry the failure category.
         """
 
         prompt = self._compose_synthesis_prompt(state, workflow_result)
 
         call_started = datetime.utcnow()
-        system_prompt = ADVISOR_SYSTEM_PROMPT
-        if state.get("output_contract") == "brief":
-            system_prompt = ADVISOR_SYSTEM_PROMPT.split("Output contract")[0] + (
-                "Output contract: return only a JSON array of brief cards with string fields "
-                "tone, title, body and action. Return [] if nothing is notable."
-            )
+        system_prompt = self.prompts.for_contract(state.get("output_contract"))
         completion = await self.call_llm(prompt, system_prompt=system_prompt)
         call_seconds = (datetime.utcnow() - call_started).total_seconds()
-        workflow_result.setdefault("metadata", {})["llm"] = {
-            "model": completion.model, "input_tokens": completion.input_tokens,
-            "output_tokens": completion.output_tokens, "api_cost": completion.cost,
-            "cost_status": "known" if completion.cost is not None else "unknown",
-            "pricing_version": completion.pricing_version,
-        }
+        usage = completion_metadata(completion, self.llm)
+        # Recorded before the output is validated, so a rejected answer still
+        # reports what it cost.
+        workflow_result.setdefault("metadata", {})["llm"] = dict(usage)
 
         if state.get("output_contract") == "brief":
             # The host applies the dedicated card schema and policy gates.
             # Preserve raw output and usage even when that validation rejects it.
             metadata = dict(workflow_result.get("metadata", {}))
-            metadata["llm"] = {"model": completion.model,
-                "input_tokens": completion.input_tokens, "output_tokens": completion.output_tokens,
-                "api_cost": completion.cost, "cost_status": "known" if completion.cost is not None else "unknown",
-                "pricing_version": completion.pricing_version}
+            metadata["llm"] = dict(usage)
+            metadata["prompt_version"] = self.prompts.version
             brief_text = completion.text
             try:
                 wrapped = json.loads(brief_text)
@@ -520,7 +521,7 @@ class AdvancedOrchestrator(BaseAgent):
             for key in ("insights", "recommendations"):
                 values = parsed.get(key, [])
                 if not isinstance(values, list) or len(values) > 5 or any(not isinstance(item, str) or len(item) > 2000 for item in values):
-                    raise LLMResponseError("LLM returned invalid list fields")
+                    raise LLMMalformedCompletionError("LLM returned invalid list fields")
             insights = parsed.get("insights", [])
             recommendations = parsed.get("recommendations", [])
             try:
@@ -530,14 +531,14 @@ class AdvancedOrchestrator(BaseAgent):
             except (TypeError, ValueError):
                 confidence = 0.5
         if not response_text and (isinstance(parsed, dict) or completion.text.lstrip().startswith(("{", "["))):
-            raise LLMResponseError("LLM returned an invalid response object")
+            raise LLMMalformedCompletionError("LLM returned an invalid response object")
         if not response_text:
             # Contract violation (non-JSON or empty "response"): the raw
             # completion is still a real model answer — use it verbatim
             # rather than failing the conversation.
             response_text = completion.text.strip()
         if not response_text:
-            raise LLMResponseError("LLM returned an empty completion")
+            raise LLMEmptyCompletionError("LLM returned an empty completion")
 
         synthesis = AgentResult(
             agent_name="llm_synthesis",
@@ -558,15 +559,8 @@ class AdvancedOrchestrator(BaseAgent):
         metadata["agents_used"] = list(metadata.get("agents_used", [])) + [
             "llm_synthesis"
         ]
-        metadata["llm"] = {
-            "model": completion.model,
-            "input_tokens": completion.input_tokens,
-            "output_tokens": completion.output_tokens,
-            "api_cost": completion.cost,
-            "cost_status": "known" if completion.cost is not None else "unknown",
-            "pricing_version": completion.pricing_version,
-            "parsed_contract": bool(parsed),
-        }
+        metadata["llm"] = {**usage, "parsed_contract": bool(parsed)}
+        metadata["prompt_version"] = self.prompts.version
         metadata["confidence"] = confidence
 
         return {
@@ -703,18 +697,31 @@ class AdvancedOrchestrator(BaseAgent):
     def _create_error_response(
         self, error_message: str, error_type: str = "orchestration_error",
         workflow_result: Optional[Dict[str, Any]] = None,
+        error: Optional[LLMError] = None,
     ) -> Dict[str, Any]:
-        """Keep the compatibility argument without exposing exception text."""
+        """Keep the compatibility argument without exposing exception text.
+
+        `error_type` stays the coarse code hosts branch on. A provider-layer
+        `error` adds its stable category and retry hints, and a charged but
+        unusable completion still reports its usage under `llm`.
+        """
         safe = failure(error_type)
         logger.warning("Request failed: category=%s request_id=%s", safe["error_type"], safe["request_id"])
         previous = workflow_result or {}
+        metadata = {
+            **previous.get("metadata", {}),
+            "orchestrator_type": "advanced", "workflow_type": "error",
+            "error_type": safe["error_type"], "request_id": safe["request_id"],
+            "processing_time": 0.0, "timestamp": datetime.utcnow().isoformat(),
+            "prompt_version": self.prompts.version,
+        }
+        if error is not None:
+            metadata.update(failure_metadata(error))
+            charged = getattr(error, "completion", None)
+            if charged is not None and "llm" not in metadata:
+                metadata["llm"] = completion_metadata(charged, self.llm)
         return {
             **safe,
-            "metadata": {
-                **previous.get("metadata", {}),
-                "orchestrator_type": "advanced", "workflow_type": "error",
-                "error_type": safe["error_type"], "request_id": safe["request_id"],
-                "processing_time": 0.0, "timestamp": datetime.utcnow().isoformat(),
-            },
+            "metadata": metadata,
             "agent_results": previous.get("agent_results", []),
         }
