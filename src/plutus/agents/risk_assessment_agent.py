@@ -165,7 +165,9 @@ class RiskAssessmentAgent(BaseAgent):
                 "timestamp": datetime.utcnow().isoformat()
             }
             
-            logger.info(f"✅ Risk Assessment Agent completed - Overall Risk Score: {overall_risk_score}/100")
+            # Progress only: a user's risk score is a financial result and
+            # stays out of logs.
+            logger.info("Risk Assessment Agent completed")
             return agent_result
             
         except Exception as e:
