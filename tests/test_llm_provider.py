@@ -69,10 +69,17 @@ class TestCostTable:
 
 
 def _mock_sdk_response(content="hello", prompt_tokens=10, completion_tokens=4):
+    """A raw SDK response: headers plus the parsed completion.
+
+    The provider reads rate-limit headers from the same response, so the
+    seam is `with_raw_response.create` rather than `create`.
+    """
     message = MagicMock()
     message.content = content
+    message.refusal = None
     choice = MagicMock()
     choice.message = message
+    choice.finish_reason = "stop"
     usage = MagicMock()
     usage.prompt_tokens = prompt_tokens
     usage.completion_tokens = completion_tokens
@@ -80,7 +87,10 @@ def _mock_sdk_response(content="hello", prompt_tokens=10, completion_tokens=4):
     response.choices = [choice]
     response.usage = usage
     response.model = "fake-served-model"
-    return response
+    raw = MagicMock()
+    raw.headers = {}
+    raw.parse.return_value = response
+    return raw
 
 
 class TestCompleteMockedSDK:
@@ -92,7 +102,7 @@ class TestCompleteMockedSDK:
     async def test_complete_normalizes_response(self, provider):
         mocked = AsyncMock(return_value=_mock_sdk_response())
         with patch.object(
-            provider._client.chat.completions, "create", mocked
+            provider._client.chat.completions.with_raw_response, "create", mocked
         ):
             completion = await provider.complete(
                 [{"role": "user", "content": "hi"}], system="sys"
@@ -113,7 +123,7 @@ class TestCompleteMockedSDK:
     async def test_temperature_passed_only_when_set(self, provider):
         mocked = AsyncMock(return_value=_mock_sdk_response())
         with patch.object(
-            provider._client.chat.completions, "create", mocked
+            provider._client.chat.completions.with_raw_response, "create", mocked
         ):
             await provider.complete(
                 [{"role": "user", "content": "hi"}], temperature=0.3
@@ -123,17 +133,17 @@ class TestCompleteMockedSDK:
     async def test_sdk_failure_maps_to_typed_error(self, provider):
         mocked = AsyncMock(side_effect=RuntimeError("boom"))
         with patch.object(
-            provider._client.chat.completions, "create", mocked
+            provider._client.chat.completions.with_raw_response, "create", mocked
         ):
             with pytest.raises(LLMResponseError):
                 await provider.complete([{"role": "user", "content": "hi"}])
 
     async def test_empty_choices_maps_to_typed_error(self, provider):
-        response = MagicMock()
-        response.choices = []
-        mocked = AsyncMock(return_value=response)
+        raw = _mock_sdk_response()
+        raw.parse.return_value.choices = []
+        mocked = AsyncMock(return_value=raw)
         with patch.object(
-            provider._client.chat.completions, "create", mocked
+            provider._client.chat.completions.with_raw_response, "create", mocked
         ):
             with pytest.raises(LLMResponseError):
                 await provider.complete([{"role": "user", "content": "hi"}])

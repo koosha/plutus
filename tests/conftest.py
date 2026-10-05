@@ -18,6 +18,9 @@ if str(SRC) not in sys.path:
 
 # Tests must behave identically with or without a developer's real key.
 os.environ.pop("OPENAI_API_KEY", None)
+# A request that escapes a mocked seam fails on loopback (the discard port)
+# instead of reaching the provider.
+os.environ["OPENAI_BASE_URL"] = "http://127.0.0.1:9/v1"
 
 from plutus.llm import LLMCompletion, LLMProvider, LLMResponseError  # noqa: E402
 

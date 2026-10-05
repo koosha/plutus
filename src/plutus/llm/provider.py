@@ -1,4 +1,4 @@
-"""LLM provider abstraction + OpenAI implementation.
+"""LLM provider abstraction and the production implementation.
 
 Design contract (kept deliberately small):
 
@@ -7,18 +7,36 @@ Design contract (kept deliberately small):
 - No API key ever appears in code. `OpenAIProvider` reads `OPENAI_API_KEY`
   from the environment (or an explicitly-injected key) and raises the typed
   `LLMNotConfiguredError` when absent so callers can degrade gracefully.
-- Model comes from `PLUTUS_MODEL` (default: gpt-5-mini — OpenAI's current
-  cost-effective tier at $0.25/M input, $2.00/M output tokens as of 2026-08).
+- Model comes from `PLUTUS_MODEL` (default: gpt-5-mini). Only models with a
+  reviewed price (see `plutus.llm.pricing`) are dispatched; any other name is
+  refused before a request is sent.
 - Temperature is only sent when explicitly configured: the gpt-5 reasoning
   family rejects non-default temperatures, so the safe default is "omit".
+- Every failure is a typed `LLMResponseError` subclass with a stable
+  `category` and `retryable` flag (see `plutus.llm.errors`). A completion cut
+  off at the output limit, filtered, or without text is a failure, never a
+  partial success.
 """
 
+import dataclasses
 import logging
 import os
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
+
+from .errors import (
+    LLMContentFilteredError,
+    LLMEmptyCompletionError,
+    LLMError,
+    LLMModelNotPricedError,
+    LLMNotConfiguredError,
+    LLMResponseError,
+    LLMTruncatedCompletionError,
+)
+from .headers import RateLimitSnapshot, rate_limit_from_headers
+from .pricing import MODEL_COST_RATES, PRICING_VERSION, cost_for, is_priced
+from .sdk_errors import typed_provider_error
 
 logger = logging.getLogger(__name__)
 
@@ -27,36 +45,31 @@ DEFAULT_MAX_OUTPUT_TOKENS = 1024
 DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_MAX_RETRIES = 2
 
-# USD per single token (input, output), keyed by model prefix. Longest prefix
-# wins so dated snapshots ("gpt-5-mini-2026-01-01") price like their family.
-# Source: OpenAI pricing, 2026-08 — gpt-5 $1.25/$10, gpt-5-mini $0.25/$2.00,
-# gpt-5-nano $0.05/$0.40 per million tokens.
-MODEL_COST_RATES: Dict[str, Tuple[float, float]] = {
-    "gpt-5-nano": (0.05e-6, 0.40e-6),
-    "gpt-5-mini": (0.25e-6, 2.00e-6),
-    "gpt-5": (1.25e-6, 10.00e-6),
-}
-# Standard API text rates verified against the official model documentation.
-# https://developers.openai.com/api/docs/models/gpt-5-mini
-PRICING_VERSION = "openai-standard-2026-09-10"
-_MODEL_SNAPSHOT = re.compile(r"^(gpt-5(?:-mini|-nano)?)(?:-\d{4}-\d{2}-\d{2})?$")
-
-
-class LLMError(Exception):
-    """Base class for every provider-layer error."""
-
-
-class LLMNotConfiguredError(LLMError):
-    """No API key (or no SDK) — the provider cannot make real calls."""
-
-
-class LLMResponseError(LLMError):
-    """The upstream API call failed or returned an unusable response."""
+__all__ = [
+    "DEFAULT_MAX_OUTPUT_TOKENS",
+    "DEFAULT_MAX_RETRIES",
+    "DEFAULT_MODEL",
+    "DEFAULT_TIMEOUT_SECONDS",
+    "LLMCompletion",
+    "LLMError",
+    "LLMNotConfiguredError",
+    "LLMProvider",
+    "LLMResponseError",
+    "MODEL_COST_RATES",
+    "OpenAIProvider",
+    "PRICING_VERSION",
+    "cost_for",
+]
 
 
 @dataclass(frozen=True)
 class LLMCompletion:
-    """Normalized completion result independent of the backing vendor."""
+    """Normalized completion result independent of the backing vendor.
+
+    `model` is the model the provider reports having served; `requested_model`
+    is the name that was asked for. They differ when an alias resolves to a
+    dated snapshot, and evaluation evidence needs both.
+    """
 
     text: str
     model: str
@@ -64,18 +77,9 @@ class LLMCompletion:
     output_tokens: int = 0
     cost: Optional[float] = None
     pricing_version: Optional[str] = None
-
-
-def cost_for(model: str, input_tokens: int, output_tokens: int) -> Optional[float]:
-    """Versioned text pricing; unrecognized models have explicitly unknown cost."""
-    match = _MODEL_SNAPSHOT.fullmatch(model)
-    if not match:
-        return None
-    if any(isinstance(value, bool) or not isinstance(value, int) or value < 0
-           for value in (input_tokens, output_tokens)):
-        return None
-    rates = MODEL_COST_RATES[match.group(1)]
-    return input_tokens * rates[0] + output_tokens * rates[1]
+    requested_model: Optional[str] = None
+    finish_reason: Optional[str] = None
+    rate_limit: Optional[RateLimitSnapshot] = None
 
 
 class LLMProvider(ABC):
@@ -109,9 +113,37 @@ class LLMProvider(ABC):
                 and MUST be omitted from the upstream request.
 
         Raises:
-            LLMNotConfiguredError: provider has no credentials.
-            LLMResponseError: upstream call failed or response unusable.
+            LLMNotConfiguredError: provider has no credentials or no priced model.
+            LLMResponseError: upstream call failed or response unusable; the
+                subclass names the category (see plutus.llm.errors).
         """
+
+
+def _text(message: Any) -> str:
+    content = getattr(message, "content", None)
+    return content if isinstance(content, str) else ""
+
+
+def _optional_str(value: Any) -> Optional[str]:
+    return value if isinstance(value, str) else None
+
+
+def _require_usable(completion: LLMCompletion, *, has_choice: bool,
+                    refusal: Optional[str]) -> LLMCompletion:
+    """Unusable output raises a typed error that still carries paid usage."""
+    usage_only = dataclasses.replace(completion, text="")
+    if not has_choice:
+        raise LLMEmptyCompletionError("Provider response had no choices", completion=usage_only)
+    if completion.finish_reason == "length":
+        raise LLMTruncatedCompletionError(
+            "Provider output stopped at the output-token limit", completion=usage_only)
+    if completion.finish_reason == "content_filter" or (
+            refusal and refusal.strip() and not completion.text.strip()):
+        raise LLMContentFilteredError("Provider filtered or refused the output",
+                                      completion=usage_only)
+    if not completion.text.strip():
+        raise LLMEmptyCompletionError("Provider returned no text", completion=usage_only)
+    return completion
 
 
 class OpenAIProvider(LLMProvider):
@@ -175,6 +207,11 @@ class OpenAIProvider(LLMProvider):
         from ..core.config import validate_limit
         validate_limit("max_output_tokens", max_output_tokens if max_output_tokens is not None else DEFAULT_MAX_OUTPUT_TOKENS)
         validate_limit("llm_temperature", temperature)
+        if not is_priced(self.model):
+            # Paid work needs a reviewed price. The name is not repeated in
+            # the message; the host already knows what it configured.
+            raise LLMModelNotPricedError(
+                "The configured model has no reviewed price; no request was sent")
         payload: List[Dict[str, str]] = []
         if system:
             payload.append({"role": "system", "content": system})
@@ -189,27 +226,34 @@ class OpenAIProvider(LLMProvider):
         if temperature is not None:
             request["temperature"] = temperature
 
+        # The raw response exposes the rate-limit headers of this same call,
+        # so no second request is needed to observe them.
         try:
-            response = await self._client.chat.completions.create(**request)
-        except Exception as exc:  # SDK errors normalize to one typed error
-            raise LLMResponseError("OpenAI completion failed") from exc
-
-        try:
-            text = response.choices[0].message.content or ""
-        except (AttributeError, IndexError) as exc:
-            raise LLMResponseError(
-                "OpenAI response had no message content"
-            ) from exc
+            raw = await self._client.chat.completions.with_raw_response.create(**request)
+            response = raw.parse()
+        except Exception as exc:  # SDK errors normalize to typed errors
+            raise typed_provider_error(exc) from exc
 
         usage = getattr(response, "usage", None)
         input_tokens = getattr(usage, "prompt_tokens", 0) or 0
         output_tokens = getattr(usage, "completion_tokens", 0) or 0
+        cost = cost_for(self.model, input_tokens, output_tokens) if usage is not None else None
+        try:
+            choice = response.choices[0]
+        except (AttributeError, IndexError, TypeError):
+            choice = None
+        message = getattr(choice, "message", None)
 
-        return LLMCompletion(
-            text=text,
+        completion = LLMCompletion(
+            text=_text(message),
             model=getattr(response, "model", self.model) or self.model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            cost=cost_for(self.model, input_tokens, output_tokens) if usage is not None else None,
-            pricing_version=PRICING_VERSION if usage is not None and cost_for(self.model, input_tokens, output_tokens) is not None else None,
+            cost=cost,
+            pricing_version=PRICING_VERSION if cost is not None else None,
+            requested_model=self.model,
+            finish_reason=_optional_str(getattr(choice, "finish_reason", None)),
+            rate_limit=rate_limit_from_headers(getattr(raw, "headers", None)),
         )
+        return _require_usable(completion, has_choice=choice is not None,
+                               refusal=_optional_str(getattr(message, "refusal", None)))
