@@ -141,9 +141,28 @@ class TestValidation:
         assert len(prompts.chat) == len(prompts.brief) == MAX_SYSTEM_PROMPT_BYTES
 
     def test_a_derived_brief_prompt_must_also_fit(self):
-        """Without its own contract section the brief appends one, and grows."""
+        """The brief contract is longer than the chat contract it replaces."""
+        chat = "x" * (MAX_SYSTEM_PROMPT_BYTES - 16) + "Output contract."
+        assert len(chat.encode("utf-8")) == MAX_SYSTEM_PROMPT_BYTES
+        assert len(BRIEF_CONTRACT) > 16
         with pytest.raises(ValueError):
-            resolve_prompts(system_prompt="x" * MAX_SYSTEM_PROMPT_BYTES, prompt_version="host-v1")
+            resolve_prompts(system_prompt=chat, prompt_version="host-v1")
+
+    def test_a_chat_prompt_without_an_output_contract_needs_a_brief_prompt(self):
+        """Deriving a brief would keep the chat contract beside the card contract."""
+        chat = 'Be a careful guide. Reply with one JSON object {"response": string}.'
+        with pytest.raises(ValueError) as caught:
+            resolve_prompts(system_prompt=chat, prompt_version="host-v1")
+        assert "careful guide" not in str(caught.value)
+
+        prompts = resolve_prompts(system_prompt=chat, brief_system_prompt="Host brief.",
+                                  prompt_version="host-v1")
+        assert (prompts.chat, prompts.brief) == (chat, "Host brief.")
+
+    def test_the_orchestrator_refuses_a_chat_prompt_it_cannot_derive_a_brief_from(self):
+        with pytest.raises(ValueError):
+            PlutusOrchestrator(provider=FakeProvider(), system_prompt="No contract section.",
+                               prompt_version="host-v1")
 
     def test_the_system_prompt_bound_keeps_input_inside_the_host_reservation(self):
         """Wealthify reserves spend for 32,768 input tokens per attempt.

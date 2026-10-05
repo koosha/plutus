@@ -45,10 +45,13 @@ BRIEF_OUTPUT_CONTRACT = (
     "tone, title, body and action. Return [] if nothing is notable."
 )
 
+# The section of a chat prompt that a derived brief prompt replaces.
+OUTPUT_CONTRACT_MARKER = "Output contract"
+
 
 def brief_prompt_from(chat_prompt: str) -> str:
     """The brief keeps the chat prompt's rules and replaces its output contract."""
-    return chat_prompt.split("Output contract")[0] + BRIEF_OUTPUT_CONTRACT
+    return chat_prompt.split(OUTPUT_CONTRACT_MARKER)[0] + BRIEF_OUTPUT_CONTRACT
 
 
 @dataclass(frozen=True)
@@ -87,8 +90,10 @@ def resolve_prompts(
 
     A host prompt must come with its own version id, and a version id other
     than the package default must come with a host prompt, so results can
-    never attribute one prompt's answers to another. Prompt text is never
-    included in an error message.
+    never attribute one prompt's answers to another. A brief prompt is
+    derived only from a chat prompt with an output contract section to
+    replace; otherwise the brief would carry both contracts. Prompt text is
+    never included in an error message.
     """
     supplied = system_prompt is not None or brief_system_prompt is not None
     if not supplied:
@@ -102,6 +107,9 @@ def resolve_prompts(
         raise ValueError("A host system prompt cannot use the package-default version")
     chat = ADVISOR_SYSTEM_PROMPT if system_prompt is None else _checked(system_prompt, "system_prompt")
     if brief_system_prompt is None:
+        if OUTPUT_CONTRACT_MARKER not in chat:
+            raise ValueError("system_prompt has no 'Output contract' section for the brief "
+                             "contract to replace; supply brief_system_prompt")
         brief = _checked(brief_prompt_from(chat), "the brief prompt derived from system_prompt")
     else:
         brief = _checked(brief_system_prompt, "brief_system_prompt")
