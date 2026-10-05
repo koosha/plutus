@@ -1,10 +1,32 @@
 # Optional graph dependencies
 
-Minimal Plutus supports Python 3.9+. Graph mode supports Python 3.10+ because the
-patched graph releases require that interpreter minimum. The optional dependency
-markers omit graph packages on 3.9. CI covers 3.9 minimal, 3.10 graph, and both
-3.12 modes. Graph CI explicitly asserts that graph support imported successfully
-before running the contract suite, so a broken import cannot pass through skips.
+Plutus supports Python 3.10+ in both minimal and graph mode. Graph mode has
+required 3.10 since the patched graph releases set that interpreter minimum;
+minimal mode followed in 1.2.0 (see the 2026-10-05 disposition below). CI covers
+both modes on 3.10 and on 3.12. Graph CI explicitly asserts that graph support
+imported successfully before running the contract suite, so a broken import
+cannot pass through skips.
+
+## Security disposition — 2026-10-05
+
+Advisories published on 2026-10-01 made the locked runtime audit fail:
+
+| Package | Locked | Advisories | Fixed in | Disposition |
+| --- | --- | --- | --- | --- |
+| urllib3 (graph mode) | 2.7.0 | PYSEC-2026-4175, PYSEC-2026-4176, PYSEC-2026-4177 | 2.8.0 | Lock upgraded to 2.8.0, the version Wealthify already pins |
+| anyio (Python 3.9 only) | 4.12.1 | PYSEC-2026-4024, PYSEC-2026-4025 | 4.14.2 | No fixed release supports Python 3.9; Python 3.9 support removed |
+
+On Python 3.10+ the lock already resolved anyio 4.15.1, which includes the fix.
+Plutus never runs anyio process pools (PYSEC-2026-4024) and connects only to the
+provider's ASCII host name (PYSEC-2026-4025), so neither advisory is reachable
+through Plutus. As with the 2026-09-10 graph upgrade, that is not treated as a
+reason to keep an affected supported installation: anyio 4.14.2 requires Python
+3.10, CPython 3.9 has been end-of-life since October 2025, and Wealthify runs
+Python 3.12. Requiring Python 3.10 removes the 3.9 resolution from the lock;
+every Python 3.10+ version is otherwise unchanged. The 3.9 minimal CI job is
+replaced by a 3.10 minimal job.
+[anyio advisory GHSA-82r6-8w77-94w6](https://github.com/advisories/GHSA-82r6-8w77-94w6),
+[anyio advisory GHSA-5p39-cfhj-2xmp](https://github.com/advisories/GHSA-5p39-cfhj-2xmp).
 
 ## Security disposition — 2026-09-10
 

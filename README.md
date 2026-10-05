@@ -4,7 +4,7 @@ Plutus provides financial analysis and educational response synthesis for Wealth
 
 ## Install
 
-Minimal mode supports Python 3.9 or newer. Optional graph mode requires Python 3.10 or newer. Use the exact reviewed repository revision or a wheel built from that revision:
+Plutus supports Python 3.10 or newer, in minimal mode and in the optional graph mode. Python 3.9 support ended in 1.2.0 (see the [changelog](CHANGELOG.md)). Use the exact reviewed repository revision or a wheel built from that revision:
 
 ```bash
 git clone https://github.com/koosha/plutus.git
@@ -20,7 +20,7 @@ uv run --no-sync pytest -q
 uv build --wheel
 ```
 
-On Python 3.10+, the optional graph installation is tested separately with `uv sync --locked --extra dev --extra langgraph`. Python markers omit graph dependencies on 3.9; select a supported newer interpreter to use graph mode. Both supported installations must execute the same selected analyses. A missing optional dependency must not change financial conclusions. See [graph dependency security and compatibility](docs/graph-dependencies.md) for the patched minimum versions and evaluation boundary.
+The optional graph installation is tested separately with `uv sync --locked --extra dev --extra langgraph`. Both supported installations must execute the same selected analyses. A missing optional dependency must not change financial conclusions. See [graph dependency security and compatibility](docs/graph-dependencies.md) for the patched minimum versions and evaluation boundary.
 
 ## Use
 
