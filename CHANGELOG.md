@@ -82,6 +82,9 @@ checks (see Changed).
   fractional rates; the risk specialist treated them as fractions and flagged
   an 18% rate as high-interest. Thresholds are unchanged (above 15% and 20%
   APR). A negative or unrecognised-unit rate now makes debt risk unknown.
+- The `langgraph` extra requires LangGraph `>=1.2.4,<1.3` and langgraph-sdk
+  `>=0.4.4,<0.5` (it required `>=1.0.10,<1.1` and `>=0.3.15,<0.4`), because
+  the SDK fix in Security needs LangGraph 1.2. Minimal mode is unchanged.
 
 ### Removed
 
@@ -104,3 +107,7 @@ checks (see Changed).
 
 - urllib3 2.8.0 in the lock (PYSEC-2026-4175, PYSEC-2026-4176,
   PYSEC-2026-4177; graph mode only).
+- langgraph-sdk 0.4.5 and LangGraph 1.2.12 in the lock (GHSA-fvww-7h3r-vfhp,
+  CVE-2026-104873, published 2026-10-05; graph mode only). The advisory
+  concerns the SDK's custom authorization handlers, which Plutus does not
+  use; see `docs/graph-dependencies.md`.
