@@ -124,7 +124,7 @@ Account `interest_rate` values may be percentages (24.99) or fractions (0.2499).
 
 ## Verification boundaries
 
-Unit and integration tests use injected providers and synthetic data. They verify contracts and failure handling without paid model calls. They do not establish live-model answer quality, production availability, or suitability of financial advice. Host integration and opt-in provider evaluations must record their actual modes and model versions.
+Unit and integration tests use injected providers and synthetic data. They verify contracts and failure handling without paid model calls. Provider tests drive the real SDK client over an in-memory transport; CI runs them on the locked SDK 3.11.0 and, in the `host-sdk` job, on SDK 2.48.0, the release Wealthify pins. Other SDK releases allowed by the dependency range are not tested (see [SDK coverage](docs/graph-dependencies.md#sdk-coverage)). They do not establish live-model answer quality, production availability, or suitability of financial advice. Host integration and opt-in provider evaluations must record their actual modes and model versions.
 
 Conversation history belongs to the host. The historical standalone SQLite memory service is not part of the supported runtime. Project changes use `plutus/` branches and the repository owner's commit identity.
 

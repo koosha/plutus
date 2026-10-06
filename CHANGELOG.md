@@ -66,6 +66,14 @@ its values.
   been end-of-life since October 2025. Python 3.10 or newer is required. See
   `docs/graph-dependencies.md`.
 
+### CI
+
+- The Python 3.9 job was the only one that ran SDK 2.x, the major Wealthify
+  deploys. A new `host-sdk` job installs Wealthify's SDK pins (2.48.0) into
+  the locked Python 3.12 minimal environment and runs the whole suite, so the
+  provider's raw-response access, exception mapping and header capture are
+  tested on both SDK majors.
+
 ### Security
 
 - urllib3 2.8.0 in the lock (PYSEC-2026-4175, PYSEC-2026-4176,

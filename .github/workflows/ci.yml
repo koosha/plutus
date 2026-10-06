@@ -82,3 +82,38 @@ jobs:
         with:
           name: runtime-audit-${{ matrix.python }}-${{ matrix.mode }}
           path: runtime-audit.json
+  host-sdk:
+    # The lock resolves SDK 3.x, but Wealthify deploys SDK 2.x (its
+    # python-backend/requirements.txt pins the three packages below). The
+    # provider's SDK-coupled code (raw-response access, exception mapping,
+    # header capture) must keep passing on the host's exact SDK as well.
+    # Only the SDK and the two packages it adds over the lock are swapped;
+    # every other dependency stays at its locked version.
+    name: Package on the host SDK (3.12, minimal, SDK ${{ matrix.sdk }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - sdk: "2.48.0"
+            distro: "1.9.0"
+            tqdm: "4.70.0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.8.22"
+      - run: uv python install 3.12
+      - name: Install the locked minimal mode
+        run: uv sync --locked --python 3.12 --extra dev
+      - name: Replace the locked SDK with the host's pins
+        run: |
+          uv pip install --python .venv/bin/python \
+            "openai==${{ matrix.sdk }}" "distro==${{ matrix.distro }}" "tqdm==${{ matrix.tqdm }}"
+      - name: The suite must run on the host's SDK
+        env:
+          EXPECTED_SDK: ${{ matrix.sdk }}
+        run: |
+          uv run --no-sync python -c "import os, openai; assert openai.__version__ == os.environ['EXPECTED_SDK'], openai.__version__"
+      - name: Offline contract suite on the host SDK
+        run: uv run --no-sync pytest -q

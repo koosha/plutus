@@ -3,9 +3,10 @@
 Plutus supports Python 3.10+ in both minimal and graph mode. Graph mode has
 required 3.10 since the patched graph releases set that interpreter minimum;
 minimal mode followed in 1.2.0 (see the 2026-10-05 disposition below). CI covers
-both modes on 3.10 and on 3.12. Graph CI explicitly asserts that graph support
-imported successfully before running the contract suite, so a broken import
-cannot pass through skips.
+both modes on 3.10 and on 3.12, and minimal mode on 3.12 with the model
+provider's SDK release Wealthify pins (see "SDK coverage" below). Graph CI
+explicitly asserts that graph support imported successfully before running the
+contract suite, so a broken import cannot pass through skips.
 
 ## Security disposition — 2026-10-05
 
@@ -25,6 +26,27 @@ reason to keep an affected supported installation: anyio 4.14.2 requires Python
 Python 3.12. Requiring Python 3.10 removes the 3.9 resolution from the lock;
 every Python 3.10+ version is otherwise unchanged. The 3.9 minimal CI job is
 replaced by a 3.10 minimal job.
+
+### SDK coverage
+
+The 3.9 resolution was also the only one that selected SDK 2.x (2.48.0); every
+3.10+ resolution selects SDK 3.11.0. Removing it would have left no CI job
+running the suite on SDK 2.x, which is what Wealthify deploys
+(`openai==2.48.0` in `python-backend/requirements.txt`), while the 1.2.0
+provider code depends on the SDK more than before: raw-response access,
+mapping SDK exceptions to typed errors, and reading rate-limit headers. The
+`host-sdk` CI job therefore installs Wealthify's pins for the SDK and the two
+packages it adds over the lock (`openai==2.48.0`, `distro==1.9.0`,
+`tqdm==4.70.0`) into the locked Python 3.12 minimal environment, asserts the
+installed SDK version, and runs the whole offline suite. The suite drives the
+real SDK client over an in-memory transport on either major
+(`tests/provider_transport.py`), so the SDK's own status mapping and parsing
+are exercised.
+
+The boundary of that evidence: every other dependency in that job is the locked
+version, not Wealthify's pin; no SDK 2.x release other than 2.48.0 is tested,
+although `openai>=2.0.0` allows them; and no job makes a live provider request.
+When Wealthify changes its SDK pin, update the `host-sdk` matrix with it.
 [anyio advisory GHSA-82r6-8w77-94w6](https://github.com/advisories/GHSA-82r6-8w77-94w6),
 [anyio advisory GHSA-5p39-cfhj-2xmp](https://github.com/advisories/GHSA-5p39-cfhj-2xmp).
 
