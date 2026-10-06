@@ -6,9 +6,11 @@ and in the README's compatibility notes.
 ## 1.2.0 — 2026-10-05
 
 Hooks a host needs to qualify a replacement model and to change its prompt
-without a package release. Existing hosts keep working unchanged: every new
+without a package release. Existing hosts need no code change: every new
 argument is optional, new result fields are additions, and `error_type` keeps
-its values.
+its values. Unusable completions are now failures rather than successes, so
+some outcomes take a host's error path instead of its output checks (see
+Changed).
 
 ### Added
 
@@ -49,6 +51,16 @@ its values.
   The error keeps the paid usage (`error.completion`, text removed) and the
   orchestrator reports it under `metadata.llm`, so the actual cost can still
   be settled.
+- Consequences a host can see, although `error_type` keeps its values:
+  - an empty or cut-off completion used to arrive as a success that the
+    host's own output checks had to reject; it now arrives as `llm_error`
+    with `error_category` `empty_completion`, `truncated_completion` or
+    `content_filtered`, so the host's provider-error path handles it;
+  - a response without choices used to raise without usage, leaving the
+    host to keep its reserved maximum; it now reports its usage under
+    `metadata.llm` and settles at the reported cost;
+  - a refused request's rate-limit headers are at `metadata.rate_limit`;
+    `metadata.llm` appears only when a completion was received.
 - The provider reads each completion through the SDK's raw-response access to
   capture rate-limit headers; no extra request is made.
 - The recommendation and risk specialists read interest rates on one scale.
