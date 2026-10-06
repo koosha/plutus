@@ -2,7 +2,8 @@
 
 Values are parsed strictly. A header that is absent or does not parse is
 unknown (None), never zero: "0 remaining" and "not reported" lead to
-different decisions.
+different decisions. A malformed header never raises: every parsed value is
+a bounded int or a finite float, so it serializes as standard JSON.
 """
 
 import dataclasses
@@ -12,13 +13,19 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Dict, Mapping, Optional
 
-# A provider asking callers to wait longer than a day is not describing a
-# rate-limit window; such values are treated as unknown.
+# A provider asking callers to wait longer than a day, or reporting a reset
+# more than a day away, is not describing a rate-limit window; such values
+# are treated as unknown.
 MAX_RETRY_AFTER_SECONDS = 86400.0
+
+# The longest request or token count read, in digits. No rate-limit budget
+# comes near it, an 18-digit count fits in 64 bits, and int() refuses digit
+# strings longer than 4,300 characters.
+MAX_COUNT_DIGITS = 18
 
 # ASCII digits only: \d and str.isdigit() also accept characters such as "²"
 # that float() and int() then reject.
-_DIGITS = re.compile(r"[0-9]+")
+_COUNT = re.compile(r"[0-9]{1,%d}" % MAX_COUNT_DIGITS)
 _NUMBER = r"[0-9]+(?:\.[0-9]+)?"
 # Duration text in the provider's format: "6m0s", "1.5s", "20ms", "1h2m3s".
 _DURATION = re.compile(
@@ -62,21 +69,33 @@ def _lowercased(headers: Any) -> Optional[Dict[str, str]]:
     return {str(key).lower(): str(value) for key, value in items()}
 
 
+def _bounded_seconds(seconds: float) -> Optional[float]:
+    """A finite wait of at most a day, or None (float() of a long digit string is inf)."""
+    if not math.isfinite(seconds) or seconds < 0 or seconds > MAX_RETRY_AFTER_SECONDS:
+        return None
+    return seconds
+
+
 def parse_duration(text: Any) -> Optional[float]:
-    """Seconds in a duration such as "6m0s" or "20ms"; None if unparseable."""
+    """Seconds in a duration such as "6m0s" or "20ms".
+
+    None when the text does not parse or is not a rate-limit window (not
+    finite, or more than a day).
+    """
     if not isinstance(text, str) or not text:
         return None
     if _BARE_SECONDS.fullmatch(text):
-        return float(text)
+        return _bounded_seconds(float(text))
     match = _DURATION.fullmatch(text)
     if match is None or not any(match.groupdict().values()):
         return None
-    return sum(float(value) * _UNIT_SECONDS[unit]
-               for unit, value in match.groupdict().items() if value is not None)
+    return _bounded_seconds(sum(float(value) * _UNIT_SECONDS[unit]
+                                for unit, value in match.groupdict().items()
+                                if value is not None))
 
 
 def _count(text: Optional[str]) -> Optional[int]:
-    if text is None or not _DIGITS.fullmatch(text):
+    if text is None or not _COUNT.fullmatch(text):
         return None
     return int(text)
 
@@ -95,17 +114,11 @@ def rate_limit_from_headers(headers: Any) -> Optional[RateLimitSnapshot]:
     return RateLimitSnapshot(**fields)
 
 
-def _bounded_wait(seconds: float) -> Optional[float]:
-    if not math.isfinite(seconds) or seconds < 0 or seconds > MAX_RETRY_AFTER_SECONDS:
-        return None
-    return seconds
-
-
 def _numeric_wait(text: Optional[str], scale: float) -> Optional[float]:
     if text is None:
         return None
     try:
-        return _bounded_wait(float(text) * scale)
+        return _bounded_seconds(float(text) * scale)
     except ValueError:
         return None
 
@@ -130,11 +143,12 @@ def retry_after_from_headers(
         return None
     try:
         moment = parsedate_to_datetime(stated)
-    except (TypeError, ValueError, IndexError):
+    except (TypeError, ValueError, IndexError, OverflowError):
+        # datetime() raises OverflowError for a field too large for a C long.
         return None
     if moment is None:
         return None
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     current = now or datetime.now(timezone.utc)
-    return _bounded_wait(max(0.0, (moment - current).total_seconds()))
+    return _bounded_seconds(max(0.0, (moment - current).total_seconds()))

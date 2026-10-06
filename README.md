@@ -112,7 +112,7 @@ Every result from `process_message` records `metadata["prompt_version"]`. When a
 
 - `model`: the model the provider reports having served, and `requested_model`: the name that was asked for (`None` when the provider does not say);
 - `input_tokens`, `output_tokens`, `api_cost`, `cost_status` and `pricing_version`;
-- `rate_limit`: the provider's `limit`, `remaining` and `reset` values for requests and tokens (`limit_requests`, `remaining_requests`, `reset_requests_seconds`, `limit_tokens`, `remaining_tokens`, `reset_tokens_seconds`), read from the same response, or `None` when not reported. A header that is absent or does not parse is `None`, never zero.
+- `rate_limit`: the provider's `limit`, `remaining` and `reset` values for requests and tokens (`limit_requests`, `remaining_requests`, `reset_requests_seconds`, `limit_tokens`, `remaining_tokens`, `reset_tokens_seconds`), read from the same response, or `None` when not reported. A header that is absent, does not parse, or is out of range (a count longer than 18 digits, a reset more than a day away) is `None`, never zero; a malformed header never turns a completion or a typed error into a different failure.
 
 On failure, `error_type` keeps its existing values (`llm_error`, `llm_not_configured`, `orchestration_error`). Provider-layer failures add `metadata["error_category"]` and `metadata["retryable"]`, plus `retry_after_seconds` and the refused request's `rate_limit` when the provider stated them.
 

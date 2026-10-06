@@ -4,6 +4,7 @@ Every case runs the real SDK client over an in-memory transport, so the
 SDK's own status-to-exception mapping is what the provider classifies.
 """
 
+import json
 from datetime import datetime, timezone
 
 import pytest
@@ -306,3 +307,89 @@ class TestHeaderParsing:
         assert rate_limit_from_headers({"x-ratelimit-remaining-requests": "-4"}) is None
         assert rate_limit_from_headers({"x-ratelimit-remaining-requests": "²"}) is None
         assert rate_limit_from_headers(None) is None
+
+    @pytest.mark.parametrize("digits", [19, 4301, 5000])
+    def test_an_overlong_count_is_unknown_not_an_error(self, digits):
+        """int() refuses digit strings longer than 4,300 characters."""
+        headers = {"x-ratelimit-remaining-requests": "9" * digits}
+        assert rate_limit_from_headers(headers) is None
+
+    def test_the_longest_accepted_count_has_eighteen_digits(self):
+        snapshot = rate_limit_from_headers({"x-ratelimit-limit-tokens": "9" * 18})
+        assert snapshot.limit_tokens == 999_999_999_999_999_999
+
+    @pytest.mark.parametrize("text", ["9" * 400, "9" * 400 + "s", "9" * 400 + "ms",
+                                      "86400.5", "24h1s", "1441m"],
+                             ids=["400-digit-bare", "400-digit-s", "400-digit-ms",
+                                  "86400.5", "24h1s", "1441m"])
+    def test_an_out_of_range_duration_is_unknown(self, text):
+        """Above a day a reset is not a rate-limit window; inf is not JSON."""
+        assert parse_duration(text) is None
+
+    @pytest.mark.parametrize("text", ["86400", "24h", "1440m"])
+    def test_a_reset_of_exactly_one_day_is_kept(self, text):
+        assert parse_duration(text) == 86400.0
+
+    def test_a_snapshot_is_always_standard_json(self):
+        snapshot = rate_limit_from_headers({
+            "x-ratelimit-limit-requests": "50",
+            "x-ratelimit-reset-tokens": "9" * 400,
+            "x-ratelimit-reset-requests": "9" * 400 + "s",
+        })
+        assert snapshot.as_dict()["limit_requests"] == 50
+        assert snapshot.as_dict()["reset_tokens_seconds"] is None
+        assert snapshot.as_dict()["reset_requests_seconds"] is None
+        json.dumps(snapshot.as_dict(), allow_nan=False)
+
+    @pytest.mark.parametrize("stated", [
+        "Wed, 21 Oct 2026 99999999999999999999:28:00 GMT",
+        "Wed, 99999999999999999999 Oct 2026 07:28:00 GMT",
+        "Wed, 21 Oct 2026 07:28:999999999999999999999999999999 GMT",
+    ], ids=["hour", "day", "second"])
+    def test_an_http_date_with_an_overflowing_field_is_unknown(self, stated):
+        """datetime() raises OverflowError, not ValueError, for these fields."""
+        assert retry_after_from_headers({"retry-after": stated}) is None
+
+
+RATE_LIMITED = error_body("rate_limit_exceeded", "tokens")
+
+
+class TestMalformedHeadersThroughTheSdk:
+    async def test_overlong_headers_never_break_a_completion(self):
+        handler = RecordingHandler(headers={
+            "x-ratelimit-limit-requests": "50",
+            "x-ratelimit-remaining-requests": "9" * 5000,
+            "x-ratelimit-reset-tokens": "9" * 400,
+        })
+        provider = provider_over(handler)
+        completion = await provider.complete(MESSAGES)
+        await provider.aclose()
+
+        assert completion.text == "hello"
+        assert completion.rate_limit.as_dict() == {
+            "limit_requests": 50,
+            "remaining_requests": None,
+            "reset_requests_seconds": None,
+            "limit_tokens": None,
+            "remaining_tokens": None,
+            "reset_tokens_seconds": None,
+        }
+
+    async def test_overlong_headers_on_a_refusal_keep_the_typed_error(self):
+        error = await failure_from(respond(429, RATE_LIMITED, {
+            "retry-after": "3",
+            "x-ratelimit-remaining-tokens": "9" * 5000,
+            "x-ratelimit-reset-tokens": "9" * 400,
+        }))
+        assert type(error) is LLMRateLimitError
+        assert error.retry_after == 3.0
+        assert error.rate_limit is None
+
+    async def test_an_overflowing_retry_after_date_keeps_the_typed_error(self):
+        error = await failure_from(respond(429, RATE_LIMITED, {
+            "retry-after": "Wed, 21 Oct 2026 99999999999999999999:28:00 GMT",
+            "x-ratelimit-remaining-tokens": "0",
+        }))
+        assert type(error) is LLMRateLimitError
+        assert error.retry_after is None
+        assert error.rate_limit.remaining_tokens == 0
