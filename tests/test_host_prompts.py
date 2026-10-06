@@ -102,6 +102,31 @@ class TestHostPrompt:
         result, _ = await ask(orchestrator, provider)
         assert "sentinel-7f3a" not in json.dumps(result) + caplog.text
 
+    async def test_plutus_keeps_prompt_text_out_of_its_records_on_the_sdk_path(self, caplog):
+        """With the real SDK client, Plutus's own records stay prompt-free.
+
+        The SDK's and HTTP library's own DEBUG records are outside this
+        guarantee (SDK 2.x logs whole request options); the README says so.
+        """
+        from provider_transport import RecordingHandler, provider_over
+
+        caplog.set_level("DEBUG")
+        secret_prompt = "Host policy sentinel-9b2e. Output contract: JSON."
+        handler = RecordingHandler()
+        provider = provider_over(handler)
+        orchestrator = PlutusOrchestrator(provider=provider, system_prompt=secret_prompt,
+                                          prompt_version="host-v6")
+        result = await orchestrator.process_message("How am I doing?", "person",
+                                                    user_context={})
+        await provider.aclose()
+
+        assert handler.requests[0]["messages"][0]["content"] == secret_prompt
+        third_party = {"openai", "httpx", "httpx2", "httpcore", "asyncio"}
+        own = [record.getMessage() for record in caplog.records
+               if record.name.split(".")[0] not in third_party]
+        assert own, "expected Plutus to log something at DEBUG"
+        assert "sentinel-9b2e" not in json.dumps(result) + "\n".join(own)
+
 
 class TestValidation:
     @pytest.mark.parametrize("kwargs", [
