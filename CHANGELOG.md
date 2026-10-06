@@ -15,13 +15,20 @@ checks (see Changed).
 ### Added
 
 - Prices and allowed names for `gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol`,
-  `gpt-6-luna` and `gpt-6-sol` (standard rates checked on 2026-10-04), each
-  accepted alone or with a dated snapshot suffix (`-YYYY-MM-DD`). The pricing
-  version is now dated 2026-10-04. These five families bill input written to
-  the prompt cache, which is on by default, at 1.25x the input rate, so their
-  input is charged at that cache-write rate: `maximum_cost()` is a true
+  `gpt-6-luna` and `gpt-6-sol` (standard rates on the provider's global
+  endpoint, checked on 2026-10-04), each accepted alone or with a dated
+  snapshot suffix (`-YYYY-MM-DD`). The pricing version is now dated
+  2026-10-04. These five families bill input written to the prompt cache,
+  which is on by default, at 1.25x the input rate, so their input is charged
+  at that cache-write rate: on the global endpoint `maximum_cost()` is a true
   ceiling and a settled cost is an upper bound of the bill. Cached-input
-  rates are documented but not modelled.
+  rates are documented but not modelled. Regional processing (data
+  residency) and FedRAMP endpoints charge 10% more for models released on or
+  after 2026-03-05, which that ceiling does not cover.
+- The `gpt-5.6-sol` rate (4.00 / 20.00) is promotional: on 2026-10-05 the
+  provider said it is available at least through 2026-11-21 and published no
+  later price. Re-check it, and bump the pricing version if it changed,
+  before qualifying `gpt-5.6-sol` or keeping it in use after that date.
 - `OpenAIProvider.complete()` refuses a model without a reviewed price before
   any request, raising `LLMModelNotPricedError` (a `LLMNotConfiguredError`).
 - Typed provider errors, all subclasses of `LLMResponseError`, each with a

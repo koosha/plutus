@@ -55,7 +55,7 @@ CI also runs this example in an isolated wheel environment outside the source ch
 
 `OpenAIProvider` sends one Chat Completions request per answer through the model provider's official async SDK. It dispatches only models with a reviewed price: a listed family name, alone or with a dated snapshot suffix (`-YYYY-MM-DD`, for example `gpt-5.6-terra-2026-10-01`). For any other name `maximum_cost()` returns `None`, so a host can refuse before reserving spend, and `complete()` raises `LLMModelNotPricedError` before a request is sent.
 
-Standard text prices, USD per million tokens, checked on 2026-10-04 (`plutus.llm.pricing.PRICING_VERSION` names this table):
+Standard text prices on the provider's global endpoint, USD per million tokens, checked on 2026-10-04 (`plutus.llm.pricing.PRICING_VERSION` names this table):
 
 | Model | Input | Cache writes | Output | Cached input (not modelled) |
 | --- | --- | --- | --- | --- |
@@ -64,11 +64,18 @@ Standard text prices, USD per million tokens, checked on 2026-10-04 (`plutus.llm
 | `gpt-5-nano` | 0.05 | none | 0.40 | 0.005 |
 | `gpt-5.6-luna` | 0.20 | 0.25 | 1.20 | 0.02 |
 | `gpt-5.6-terra` | 2.00 | 2.50 | 12.00 | 0.20 |
-| `gpt-5.6-sol` | 4.00 | 5.00 | 20.00 | 0.40 |
+| `gpt-5.6-sol` (promotional) | 4.00 | 5.00 | 20.00 | 0.40 |
 | `gpt-6-luna` | 0.10 | 0.125 | 0.50 | 0.01 |
 | `gpt-6-sol` | 2.00 | 2.50 | 10.00 | 0.20 |
 
-Prompt caching is on by default. The 5.6 and 6 families bill input written to the cache at 1.25x the uncached input rate, and caching writes a prompt up to its latest message, so most input of a large prompt is billed at that rate; the gpt-5 family has no cache-write charge. Plutus charges every input token at the highest rate the provider can bill for it: the cache-write rate where the family has one, otherwise the uncached rate. `maximum_cost()` is therefore a true ceiling for the host's reservation, and a settled cost is an upper bound of the bill. The bill is lower when input is served from the cache, or on the 5.6 and 6 families is not written to it; those discounts are not modelled. The 5.6 and 6 families cost 2x input and 1.5x output above 272K input tokens; Plutus bounds each request far below that. The provider's model pages, checked on 2026-10-05, list Chat Completions support for all five newer families and publish no dated snapshots for them yet. Whether each model accepts the request parameters (`max_completion_tokens`, temperature omitted by default) and produces usable output within the output budget is not established by these tests; that needs a live qualification run.
+The `gpt-5.6-sol` rate is a promotional price. On 2026-10-05 the provider said it is available at least through 2026-11-21 and published no price for after that. A higher later price would make the reservation and the settled cost of a `gpt-5.6-sol` request understate spend, so re-check the rate, and bump `PRICING_VERSION` if it changed, before qualifying `gpt-5.6-sol` or keeping it in use after 2026-11-21.
+
+Prompt caching is on by default. The 5.6 and 6 families bill input written to the cache at 1.25x the uncached input rate, and caching writes a prompt up to its latest message, so most input of a large prompt is billed at that rate; the gpt-5 family has no cache-write charge. Plutus charges every input token at the highest rate the provider can bill for it: the cache-write rate where the family has one, otherwise the uncached rate. On the global endpoint `maximum_cost()` is therefore a true ceiling for the host's reservation, and a settled cost is an upper bound of the bill. The bill is lower when input is served from the cache, or on the 5.6 and 6 families is not written to it; those discounts are not modelled. Two published surcharges are not modelled either:
+
+- Prompts above 272K input tokens on the 5.6 and 6 families cost 2x input and 1.5x output for the whole request. This cannot apply to a request Plutus composes: its user prompt (`MAX_PROMPT_BYTES`) and system prompt (`MAX_SYSTEM_PROMPT_BYTES`) are at most about 32K tokens together, far below that threshold.
+- Regional processing (data residency) and FedRAMP endpoints charge 10% more for models released on or after 2026-03-05. `OpenAIProvider` builds its SDK client without a base URL, so the SDK's `OPENAI_BASE_URL` environment variable chooses the endpoint. On such an endpoint the bill can exceed `maximum_cost()` and a settled cost by up to 10%.
+
+The provider's model pages, checked on 2026-10-05, list Chat Completions support for all five newer families and publish no dated snapshots for them yet. Whether each model accepts the request parameters (`max_completion_tokens`, temperature omitted by default) and produces usable output within the output budget is not established by these tests; that needs a live qualification run.
 
 ## Provider errors
 
