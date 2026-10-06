@@ -8,9 +8,9 @@ and in the README's compatibility notes.
 Hooks a host needs to qualify a replacement model and to change its prompt
 without a package release. Existing hosts need no code change: every new
 argument is optional, new result fields are additions, and `error_type` keeps
-its values. Unusable completions are now failures rather than successes, so
-some outcomes take a host's error path instead of its output checks (see
-Changed).
+its values. Unusable completions that 1.1.0 returned as successes are now
+failures, so those outcomes take a host's error path instead of its output
+checks (see Changed).
 
 ### Added
 
@@ -54,13 +54,25 @@ Changed).
   orchestrator reports it under `metadata.llm`, so the actual cost can still
   be settled.
 - Consequences a host can see, although `error_type` keeps its values:
-  - an empty or cut-off completion used to arrive as a success that the
-    host's own output checks had to reject; it now arrives as `llm_error`
-    with `error_category` `empty_completion`, `truncated_completion` or
-    `content_filtered`, so the host's provider-error path handles it;
-  - a response without choices used to raise without usage, leaving the
-    host to keep its reserved maximum; it now reports its usage under
-    `metadata.llm` and settles at the reported cost;
+  - a brief completion (`output_contract="brief"`) that was empty, refused,
+    filtered or stopped at the output-token limit used to arrive as a
+    success, left to the host's own card checks; it now arrives as
+    `llm_error` with `error_category` `empty_completion`,
+    `content_filtered` or `truncated_completion`, so the host's
+    provider-error path handles it;
+  - a chat completion that stopped at the limit or was filtered used to
+    arrive as a success when its text still passed the chat checks: plain
+    text, returned verbatim, or a complete JSON answer. It now arrives as
+    `llm_error` with `truncated_completion` or `content_filtered`;
+  - a chat completion that was empty or refused, or was cut off or
+    filtered inside its JSON object, was already `llm_error` and already
+    reported its usage under `metadata.llm`; only its `error_category` is
+    new;
+  - a response without choices was the only unusable completion that
+    carried no usage, so the host kept its reserved maximum; it now reports
+    its usage under `metadata.llm` (`error_category` `empty_completion`)
+    and settles at the reported cost. Every other unusable completion
+    above reported its usage before and still does;
   - a refused request's rate-limit headers are at `metadata.rate_limit`;
     `metadata.llm` appears only when a completion was received.
 - The provider reads each completion through the SDK's raw-response access to
