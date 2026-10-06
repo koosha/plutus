@@ -24,6 +24,15 @@ BRIEF_SHA256 = "c77a630784aa5eb21f0fcc0c7e46d758292f49794e613d56fefc122b882c3a06
 BRIEF_CONTRACT = ("Output contract: return only a JSON array of brief cards with string fields "
                   "tone, title, body and action. Return [] if nothing is notable.")
 HOST_PROMPT = "You are the host's evaluated advisor.\nOutput contract — reply in JSON."
+# Rules that mention the output contract before the section that defines it.
+RULES = ("You are the host advisor.\n"
+         "- Always follow the Output contract below.\n"
+         "- Never recommend buying, selling or holding a specific security.\n"
+         "- Remind the user to consult a licensed professional for tax or legal "
+         "decisions.\n"
+         "\n")
+RULES_THEN_CONTRACT = (RULES + "Output contract — respond with one JSON object: "
+                       '{"response": string}')
 
 
 def sha256(text):
@@ -78,6 +87,19 @@ class TestHostPrompt:
         _, system = await ask(orchestrator, provider, output_contract="brief")
         assert system == "You are the host's evaluated advisor.\n" + BRIEF_CONTRACT
 
+    async def test_a_rule_that_mentions_the_contract_keeps_the_rules_after_it(self):
+        """The brief is cut where the section starts, not at the first mention.
+
+        Cutting at the mention would send a brief prompt without the
+        no-advice and consult-a-professional rules that follow it.
+        """
+        provider = FakeProvider(raw_text="[]")
+        orchestrator = PlutusOrchestrator(provider=provider,
+                                          system_prompt=RULES_THEN_CONTRACT,
+                                          prompt_version="host-v7")
+        _, system = await ask(orchestrator, provider, output_contract="brief")
+        assert system == RULES + BRIEF_CONTRACT
+
     async def test_an_explicit_brief_prompt_is_used_verbatim(self):
         provider = FakeProvider(raw_text="[]")
         orchestrator = PlutusOrchestrator(provider=provider, system_prompt=HOST_PROMPT,
@@ -95,7 +117,7 @@ class TestHostPrompt:
 
     async def test_prompt_text_never_reaches_results_or_logs(self, caplog):
         caplog.set_level("DEBUG")
-        secret_prompt = "Host policy sentinel-7f3a. Output contract: JSON."
+        secret_prompt = "Host policy sentinel-7f3a.\nOutput contract: JSON."
         provider = FakeProvider()
         orchestrator = PlutusOrchestrator(provider=provider, system_prompt=secret_prompt,
                                           prompt_version="host-v5")
@@ -111,7 +133,7 @@ class TestHostPrompt:
         from provider_transport import RecordingHandler, provider_over
 
         caplog.set_level("DEBUG")
-        secret_prompt = "Host policy sentinel-9b2e. Output contract: JSON."
+        secret_prompt = "Host policy sentinel-9b2e.\nOutput contract: JSON."
         handler = RecordingHandler()
         provider = provider_over(handler)
         orchestrator = PlutusOrchestrator(provider=provider, system_prompt=secret_prompt,
@@ -167,11 +189,12 @@ class TestValidation:
 
     def test_a_derived_brief_prompt_must_also_fit(self):
         """The brief contract is longer than the chat contract it replaces."""
-        chat = "x" * (MAX_SYSTEM_PROMPT_BYTES - 16) + "Output contract."
+        chat = "x" * (MAX_SYSTEM_PROMPT_BYTES - 17) + "\nOutput contract."
         assert len(chat.encode("utf-8")) == MAX_SYSTEM_PROMPT_BYTES
-        assert len(BRIEF_CONTRACT) > 16
-        with pytest.raises(ValueError):
+        assert len(BRIEF_CONTRACT) > len("Output contract.")
+        with pytest.raises(ValueError) as caught:
             resolve_prompts(system_prompt=chat, prompt_version="host-v1")
+        assert "exceeds" in str(caught.value)
 
     def test_a_chat_prompt_without_an_output_contract_needs_a_brief_prompt(self):
         """Deriving a brief would keep the chat contract beside the card contract."""
@@ -183,6 +206,38 @@ class TestValidation:
         prompts = resolve_prompts(system_prompt=chat, brief_system_prompt="Host brief.",
                                   prompt_version="host-v1")
         assert (prompts.chat, prompts.brief) == (chat, "Host brief.")
+
+    def test_two_contract_sections_need_an_explicit_brief_prompt(self):
+        """With two lines starting the section, the cut point is ambiguous."""
+        chat = RULES_THEN_CONTRACT + "\nOutput contract for lists: one item per line."
+        with pytest.raises(ValueError) as caught:
+            resolve_prompts(system_prompt=chat, prompt_version="host-v1")
+        assert "host advisor" not in str(caught.value)
+
+        prompts = resolve_prompts(system_prompt=chat, brief_system_prompt="Host brief.",
+                                  prompt_version="host-v1")
+        assert (prompts.chat, prompts.brief) == (chat, "Host brief.")
+
+    def test_a_mention_inside_a_line_is_not_a_contract_section(self):
+        chat = 'Be a careful guide. Follow the Output contract: {"response": string}.'
+        with pytest.raises(ValueError):
+            resolve_prompts(system_prompt=chat, prompt_version="host-v1")
+
+    def test_the_section_may_follow_a_windows_line_break(self):
+        prompts = resolve_prompts(system_prompt="Host rules.\r\nOutput contract: JSON.",
+                                  prompt_version="host-v1")
+        assert prompts.brief == "Host rules.\r\n" + BRIEF_CONTRACT
+
+    @pytest.mark.parametrize("chat", [
+        "No contract section.",
+        "Rules. Follow the Output contract.",
+        "Rules.\nOutput contract: JSON.\nOutput contract, again: JSON.",
+    ])
+    def test_deriving_a_brief_directly_refuses_an_unclear_section(self, chat):
+        from plutus.agents.system_prompts import brief_prompt_from
+
+        with pytest.raises(ValueError):
+            brief_prompt_from(chat)
 
     def test_the_orchestrator_refuses_a_chat_prompt_it_cannot_derive_a_brief_from(self):
         with pytest.raises(ValueError):

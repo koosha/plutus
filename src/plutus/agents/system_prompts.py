@@ -45,13 +45,32 @@ BRIEF_OUTPUT_CONTRACT = (
     "tone, title, body and action. Return [] if nothing is notable."
 )
 
-# The section of a chat prompt that a derived brief prompt replaces.
+# A chat prompt's output contract section starts at the one line that begins
+# with this phrase and runs to the end of the prompt. A derived brief prompt
+# keeps everything before that line and replaces the section.
 OUTPUT_CONTRACT_MARKER = "Output contract"
+_SECTION_START = re.compile("^" + re.escape(OUTPUT_CONTRACT_MARKER), re.MULTILINE)
 
 
 def brief_prompt_from(chat_prompt: str) -> str:
-    """The brief keeps the chat prompt's rules and replaces its output contract."""
-    return chat_prompt.split(OUTPUT_CONTRACT_MARKER)[0] + BRIEF_OUTPUT_CONTRACT
+    """The brief keeps the chat prompt's rules and replaces its output contract.
+
+    The cut is made at the only line that starts with "Output contract". The
+    phrase inside a line belongs to a rule and is kept. With no such line the
+    brief would carry the chat contract beside the card contract; with more
+    than one, the cut point is ambiguous and could drop the rules between
+    them. Either raises ValueError, without quoting the prompt.
+    """
+    starts = [match.start() for match in _SECTION_START.finditer(chat_prompt)]
+    if not starts:
+        raise ValueError("The chat system prompt has no line that starts with 'Output "
+                         "contract' for the brief contract to replace; supply "
+                         "brief_system_prompt")
+    if len(starts) > 1:
+        raise ValueError("The chat system prompt has more than one line that starts "
+                         "with 'Output contract', so the section to replace is "
+                         "ambiguous; supply brief_system_prompt")
+    return chat_prompt[:starts[0]] + BRIEF_OUTPUT_CONTRACT
 
 
 @dataclass(frozen=True)
@@ -91,9 +110,10 @@ def resolve_prompts(
     A host prompt must come with its own version id, and a version id other
     than the package default must come with a host prompt, so results can
     never attribute one prompt's answers to another. A brief prompt is
-    derived only from a chat prompt with an output contract section to
-    replace; otherwise the brief would carry both contracts. Prompt text is
-    never included in an error message.
+    derived only from a chat prompt with exactly one line that starts its
+    output contract section (see brief_prompt_from); otherwise the host
+    supplies brief_system_prompt. Prompt text is never included in an
+    error message.
     """
     supplied = system_prompt is not None or brief_system_prompt is not None
     if not supplied:
@@ -107,9 +127,6 @@ def resolve_prompts(
         raise ValueError("A host system prompt cannot use the package-default version")
     chat = ADVISOR_SYSTEM_PROMPT if system_prompt is None else _checked(system_prompt, "system_prompt")
     if brief_system_prompt is None:
-        if OUTPUT_CONTRACT_MARKER not in chat:
-            raise ValueError("system_prompt has no 'Output contract' section for the brief "
-                             "contract to replace; supply brief_system_prompt")
         brief = _checked(brief_prompt_from(chat), "the brief prompt derived from system_prompt")
     else:
         brief = _checked(brief_system_prompt, "brief_system_prompt")

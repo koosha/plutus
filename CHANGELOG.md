@@ -39,8 +39,10 @@ Changed).
 - Host-supplied system prompts: `PlutusOrchestrator(system_prompt=...,
   brief_system_prompt=..., prompt_version=...)`. The default is the existing
   prompt, byte for byte, under version `package-default`; every result
-  records `metadata.prompt_version`. A host chat prompt without an
-  `Output contract` section needs an explicit `brief_system_prompt`.
+  records `metadata.prompt_version`. A brief prompt is derived from a host
+  chat prompt only when exactly one line begins with `Output contract`;
+  everything from that line on is replaced by the brief card contract.
+  Otherwise the host supplies `brief_system_prompt`.
 - `plutus.agents.boundaries.apr_fraction(value, unit=None)` and the optional
   account field `interest_rate_unit` (`percent` or `fraction`).
 
