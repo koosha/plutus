@@ -1,15 +1,16 @@
 """Pluggable LLM provider layer for Plutus.
 
-Public surface:
-    LLMProvider           — abstract async completion interface
-    OpenAIProvider        — the production implementation (openai SDK)
-    LLMCompletion         — normalized completion result
-    LLMError              — base class for all provider errors
-    LLMNotConfiguredError — no API key / SDK missing (typed, catchable)
-    LLMModelNotPricedError — the configured model has no reviewed price
-    LLMResponseError      — upstream API call failed or returned junk; its
-                            subclasses name the category (ERROR_CATEGORIES)
-    RateLimitSnapshot     — request/token budgets reported by the provider
+Public names:
+    LLMProvider            abstract async completion interface
+    OpenAIProvider         the production implementation, on the openai SDK
+    LLMCompletion          normalized completion result
+    LLMError               base class for all provider errors
+    LLMNotConfiguredError  no API key or no SDK; typed and catchable
+    LLMModelNotPricedError the configured model has no reviewed price
+    LLMResponseError       the upstream API call failed or returned unusable
+                           output; its subclasses name the category
+                           (ERROR_CATEGORIES)
+    RateLimitSnapshot      request and token budgets reported by the provider
 """
 
 from .errors import (

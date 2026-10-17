@@ -1,18 +1,18 @@
 """
-Advanced Orchestrator - Phase 3 Multi-Agent Workflow
-====================================================
+Advanced orchestrator, the Phase 3 multi-agent workflow
+=======================================================
 
-This is the advanced orchestrator that coordinates all specialized agents
-using sophisticated LangGraph workflows. It intelligently routes conversations
-to the appropriate agents and synthesizes results.
+This orchestrator coordinates all specialized agents, through a LangGraph
+workflow when LangGraph is available. It routes each conversation to the
+matching agents and synthesizes their results.
 
-Key Capabilities:
-1. Intelligent agent routing based on conversation analysis
+Capabilities:
+1. Agent routing based on conversation analysis
 2. Parallel agent execution for complex queries
 3. Result synthesis and prioritization
 4. Context management across agents
 5. Conversation memory and continuity
-6. Adaptive workflow based on user needs
+6. A workflow that adapts to user needs
 """
 
 import logging
@@ -62,8 +62,8 @@ logger = logging.getLogger(__name__)
 
 class AdvancedOrchestrator(BaseAgent):
     """
-    Advanced orchestrator that coordinates multiple specialized agents
-    using LangGraph for sophisticated conversation workflows.
+    Orchestrator that coordinates multiple specialized agents, using
+    LangGraph for the conversation workflow.
     """
 
     def __init__(
@@ -87,15 +87,15 @@ class AdvancedOrchestrator(BaseAgent):
         self.prompts = resolve_prompts(system_prompt, brief_system_prompt, prompt_version)
         config = get_config()
 
-        # Resolve the LLM provider: explicit injection wins (tests, custom
-        # vendors); otherwise build the production provider from the
+        # Resolve the LLM provider. An injected provider wins, as in tests and
+        # custom vendors. Otherwise build the production provider from the
         # environment. An unconfigured environment leaves the provider as
-        # None and process_message returns a typed error response.
+        # None, and process_message returns a typed error response.
         #
         # The configured timeout and retry budget are handed to the SDK here.
         # They used to be declared in PlutusConfig and never read, so the
-        # provider silently used its own defaults and the config was a claim
-        # about a control nobody applied.
+        # provider silently used its own defaults and the config named a
+        # control nobody applied.
         if provider is None:
             try:
                 provider = OpenAIProvider(
@@ -112,7 +112,7 @@ class AdvancedOrchestrator(BaseAgent):
         super().__init__("Advanced Orchestrator", provider=provider)
         self.agent_type = "advanced_orchestrator"
 
-        # Initialize specialized agents (deterministic analyses)
+        # The specialized agents run deterministic analyses.
         self.financial_agent = FinancialAnalysisAgent()
         self.goal_agent = GoalExtractionAgent()
         self.recommendation_agent = RecommendationAgent()
@@ -162,8 +162,8 @@ class AdvancedOrchestrator(BaseAgent):
     
     async def _process_core_logic(self, state: ConversationState) -> Dict[str, Any]:
         """
-        Orchestrator uses process_message instead of the standard process flow.
-        This method delegates to process_message for consistency.
+        The orchestrator uses process_message instead of the standard
+        process flow, so this method delegates to process_message.
         """
         user_message = state.get("user_message", "")
         user_id = state.get("user_id", "unknown")
@@ -180,18 +180,18 @@ class AdvancedOrchestrator(BaseAgent):
         output_contract: str = "chat",
     ) -> Dict[str, Any]:
         """
-        Process user message through advanced multi-agent workflow.
+        Process a user message through the multi-agent workflow.
 
         Args:
             user_message: User's input message
             user_id: User identifier
             session_id: Optional session identifier for conversation continuity
-            user_context: Integration-supplied financial context (e.g. built
-                by the host app from its live database). When provided it is
-                used verbatim and the internal context service is bypassed.
+            user_context: Integration-supplied financial context, for example
+                built by the host app from its live database. When provided it
+                is used verbatim and the internal context service is bypassed.
 
         Returns:
-            Comprehensive response from coordinated agents
+            The response from the coordinated agents
         """
         
         result = None
@@ -201,7 +201,7 @@ class AdvancedOrchestrator(BaseAgent):
             start_time = datetime.utcnow()
 
             # 0. Typed refusal when no provider is configured. Plutus does
-            # not fabricate advice: without a real LLM the caller gets a
+            # not fabricate advice. Without a real LLM the caller gets a
             # machine-readable error and decides how to degrade.
             if self.llm is None:
                 return self._create_error_response(
@@ -220,19 +220,19 @@ class AdvancedOrchestrator(BaseAgent):
             # 2. Analyze conversation and determine agent routing
             routing_analysis = await self._analyze_conversation_routing(user_message, state)
 
-            # 3. Execute appropriate workflow (deterministic specialist analyses)
+            # 3. Run the matching workflow of deterministic specialist analyses
             if self.workflow and LANGGRAPH_AVAILABLE:
                 result = await self._execute_langgraph_workflow(state, routing_analysis)
             else:
                 result = await self._execute_fallback_workflow(state, routing_analysis)
 
-            # 4. Real LLM synthesis: compose the financial context and the
+            # 4. Real LLM synthesis. Compose the financial context and the
             # specialist findings into one completion that produces the
-            # user-facing response (validated into AgentResult).
+            # user-facing response, validated into an AgentResult.
             #
-            # Bounded by the configured wall-clock deadline. The SDK's own
-            # per-attempt timeout does not cap total time once retries are in
-            # play, so without this a "30 second timeout" can hold a caller's
+            # The configured wall-clock deadline bounds this step. The SDK's
+            # own per-attempt timeout does not cap total time once retries
+            # start, so without this a "30 second timeout" can hold a caller's
             # request open for two minutes.
             try:
                 result = await asyncio.wait_for(
@@ -272,10 +272,10 @@ class AdvancedOrchestrator(BaseAgent):
         session_id: Optional[str],
         user_context: Optional[Dict[str, Any]] = None,
     ) -> ConversationState:
-        """Build comprehensive conversation state.
+        """Build the conversation state.
 
-        An integration-supplied `user_context` wins; otherwise the internal
-        context service builds one (standalone mode).
+        An integration-supplied `user_context` wins. Otherwise the internal
+        context service builds one, which is standalone mode.
         """
 
         if user_context is None:
@@ -307,7 +307,7 @@ class AdvancedOrchestrator(BaseAgent):
         user_message: str, 
         state: ConversationState
     ) -> Dict[str, Any]:
-        """Analyze conversation to determine optimal agent routing"""
+        """Analyze the conversation to choose which agents run"""
         
         message_lower = user_message.lower()
         routing_scores = {}
@@ -340,7 +340,7 @@ class AdvancedOrchestrator(BaseAgent):
         best_routing = max(routing_scores.items(), key=lambda x: x[1]["score"])
         routing_name, routing_data = best_routing
         
-        # If no strong match, use comprehensive analysis
+        # With no strong match, use the comprehensive_analysis routing
         if routing_data["score"] < 1:
             routing_name = "comprehensive_analysis"
             routing_data = routing_scores["comprehensive_analysis"]
@@ -385,7 +385,7 @@ class AdvancedOrchestrator(BaseAgent):
         return await self._execute_plan(state, routing_analysis)
 
     async def _execute_plan(self, state, routing_analysis):
-        """Run an ordered plan once, retaining every specialist's outcome.
+        """Run an ordered plan once and keep every specialist's outcome.
 
         Both executors share deadlines, concurrency, cancellation and result
         ordering. Workflow failures are never retried through another path.
@@ -470,16 +470,16 @@ class AdvancedOrchestrator(BaseAgent):
         """Produce the user-facing answer with ONE real LLM completion.
 
         The specialists' deterministic analyses plus the user's financial
-        context become the user prompt; the system prompt (the host's, or
-        the package default ADVISOR_SYSTEM_PROMPT) carries the
-        educational-scope guardrails and the output contract. The
+        context become the user prompt. The system prompt carries the
+        educational-scope guardrails and the output contract. It is the
+        host's prompt, or the package default ADVISOR_SYSTEM_PROMPT. The
         completion is parsed and validated into an AgentResult that is
         appended to agent_results, and its "response" replaces the template
         synthesis.
 
         Raises:
-            LLMNotConfiguredError / LLMResponseError (and its typed
-            subclasses): bubbled to process_message, which maps them to
+            LLMNotConfiguredError / LLMResponseError and its typed
+            subclasses: passed up to process_message, which maps them to
             error responses that carry the failure category.
         """
 
@@ -496,7 +496,7 @@ class AdvancedOrchestrator(BaseAgent):
 
         if state.get("output_contract") == "brief":
             # The host applies the dedicated card schema and policy gates.
-            # Preserve raw output and usage even when that validation rejects it.
+            # Keep the raw output and usage even when that validation rejects it.
             metadata = dict(workflow_result.get("metadata", {}))
             metadata["llm"] = dict(usage)
             metadata["prompt_version"] = self.prompts.version
@@ -533,9 +533,9 @@ class AdvancedOrchestrator(BaseAgent):
         if not response_text and (isinstance(parsed, dict) or completion.text.lstrip().startswith(("{", "["))):
             raise LLMMalformedCompletionError("LLM returned an invalid response object")
         if not response_text:
-            # Contract violation (non-JSON or empty "response"): the raw
-            # completion is still a real model answer — use it verbatim
-            # rather than failing the conversation.
+            # A contract violation, meaning non-JSON or an empty "response".
+            # The raw completion is still a real model answer, so use it
+            # verbatim rather than failing the conversation.
             response_text = completion.text.strip()
         if not response_text:
             raise LLMEmptyCompletionError("LLM returned an empty completion")
@@ -578,7 +578,7 @@ class AdvancedOrchestrator(BaseAgent):
         state: ConversationState,
         workflow_result: Dict[str, Any],
     ) -> str:
-        """Build the user prompt: message + financial context + findings."""
+        """Build the user prompt from the message, financial context and findings."""
 
         compact_findings = []
         for item in workflow_result.get("agent_results", []):
@@ -602,7 +602,7 @@ class AdvancedOrchestrator(BaseAgent):
         agent_results: List[Dict[str, Any]],
         state: ConversationState
     ) -> str:
-        """Synthesize results from multiple agents into coherent response"""
+        """Combine the results of several agents into one response"""
         
         successful_results = [r for r in agent_results if r.get("success")]
         
@@ -611,7 +611,7 @@ class AdvancedOrchestrator(BaseAgent):
         
         response_parts = []
         
-        # Prioritize responses based on agent importance and content quality
+        # Order responses by agent importance and content quality
         prioritized_results = self._prioritize_agent_results(successful_results)
         
         # Financial analysis (if present)

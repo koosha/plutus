@@ -3,7 +3,7 @@
 The scorer this replaces awarded points for a long answer, a matching
 complexity label and the model's own reported confidence. A fluent
 hallucination scores full marks on all three, which made the number
-actively misleading for financial advice.
+misleading for financial advice.
 """
 
 import pytest

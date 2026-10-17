@@ -1,9 +1,9 @@
 """
-Financial Analysis Agent
+Financial analysis agent
 ========================
 
-Analyzes user's financial health, calculates key metrics, and provides
-comprehensive financial overview and insights.
+Analyzes the user's financial health, calculates key metrics, and gives a
+financial overview and insights.
 """
 
 import json
@@ -16,8 +16,8 @@ from ..models.state import ConversationState
 
 class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseFormattingMixin):
     """
-    Financial Analysis Agent
-    
+    Financial analysis agent
+
     Responsibilities:
     - Analyze account balances and net worth
     - Calculate financial health metrics
@@ -61,7 +61,7 @@ class FinancialAnalysisAgent(BaseAgent, FinancialCalculationMixin, ResponseForma
     
     async def _analyze_financial_health(self, user_context: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Comprehensive financial health analysis
+        Analyze the user's financial health
         """
         
         financial_snapshot = user_context.get("financial_snapshot", {})

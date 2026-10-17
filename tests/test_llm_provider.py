@@ -1,5 +1,5 @@
 """LLM provider layer: typed configuration errors, env resolution, pricing,
-and the SDK-call plumbing (mocked — no network)."""
+and the SDK-call plumbing, mocked so nothing reaches the network."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 

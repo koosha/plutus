@@ -1,4 +1,4 @@
-"""Installed-package smoke example; no credentials, sample files, or network."""
+"""Smoke-test the installed package without credentials, sample files or network."""
 import asyncio
 import json
 from importlib.metadata import version

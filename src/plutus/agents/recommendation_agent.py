@@ -1,17 +1,17 @@
 """
-Recommendation Agent - Phase 3 Advanced Agent
-=============================================
+Recommendation agent, a Phase 3 advanced agent
+==============================================
 
-This agent specializes in generating specific, actionable financial recommendations
-based on user context, goals, and financial situation. It provides personalized
-advice for wealth building, optimization, and financial decision-making.
+This agent generates specific, actionable financial recommendations from the
+user's context, goals and financial situation. It gives personalized advice
+for wealth building, optimization and financial decisions.
 
-Key Capabilities:
+Capabilities:
 1. Generate personalized investment recommendations
 2. Suggest debt payoff strategies
 3. Recommend budget optimizations
 4. Provide tax-efficient strategies
-5. Suggest goal achievement pathways
+5. Suggest ways to reach goals
 6. Risk-adjusted portfolio recommendations
 """
 
@@ -27,16 +27,16 @@ from ..core.config import get_config
 
 logger = logging.getLogger(__name__)
 
-# Debt above this APR (as a fraction: 0.15 is 15%) is prioritised for payoff.
+# Debt above this APR is prioritised for payoff. It is a fraction: 0.15 is 15%.
 HIGH_INTEREST_APR = 0.15
 
 
 class RecommendationAgent(BaseAgent):
     """
-    Advanced agent for generating personalized financial recommendations.
-    
-    This agent analyzes user's complete financial picture and provides
-    specific, actionable advice tailored to their situation and goals.
+    Agent that generates personalized financial recommendations.
+
+    It analyzes the user's whole financial picture and gives specific,
+    actionable advice for their situation and goals.
     """
     
     def __init__(self):
@@ -217,31 +217,31 @@ class RecommendationAgent(BaseAgent):
         recommendations = []
         implicit_needs = needs.get("implicit_needs", {})
         
-        # Emergency Fund Recommendations
+        # Emergency fund recommendations
         if implicit_needs.get("emergency_fund"):
             recommendations.extend(await self._generate_emergency_fund_recommendations(user_context))
         
-        # Debt Management Recommendations
+        # Debt management recommendations
         if implicit_needs.get("debt_management"):
             recommendations.extend(await self._generate_debt_recommendations(user_context))
         
-        # Investment Recommendations
+        # Investment recommendations
         if implicit_needs.get("investment"):
             recommendations.extend(await self._generate_investment_recommendations(user_context))
         
-        # Retirement Recommendations
+        # Retirement recommendations
         if implicit_needs.get("retirement"):
             recommendations.extend(await self._generate_retirement_recommendations(user_context))
         
-        # Budgeting Recommendations
+        # Budgeting recommendations
         if implicit_needs.get("budgeting"):
             recommendations.extend(await self._generate_budgeting_recommendations(user_context))
         
-        # Goal Planning Recommendations
+        # Goal planning recommendations
         if implicit_needs.get("goal_planning"):
             recommendations.extend(await self._generate_goal_planning_recommendations(user_context))
         
-        # Tax Optimization Recommendations
+        # Tax optimization recommendations
         if implicit_needs.get("tax_optimization"):
             recommendations.extend(await self._generate_tax_recommendations(user_context))
         
@@ -298,7 +298,7 @@ class RecommendationAgent(BaseAgent):
         total_debt = sum(abs(acc.get("balance", 0)) for acc in debt_accounts)
         monthly_income = measurement(user_context, "monthly_income")
         
-        # High interest debt check (credit cards typically); unknown rates
+        # High-interest debt check, typically credit cards. Unknown rates
         # are not counted as high.
         high_interest_debt = [
             acc for acc in debt_accounts

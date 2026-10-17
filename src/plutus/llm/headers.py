@@ -1,8 +1,8 @@
 """Rate-limit evidence read from provider response headers.
 
 Values are parsed strictly. A header that is absent or does not parse is
-unknown (None), never zero: "0 remaining" and "not reported" lead to
-different decisions. A malformed header never raises: every parsed value is
+unknown (None), never zero, because "0 remaining" and "not reported" lead to
+different decisions. A malformed header never raises. Every parsed value is
 a bounded int or a finite float, so it serializes as standard JSON.
 """
 
@@ -14,7 +14,7 @@ from email.utils import parsedate_to_datetime
 from typing import Any, Dict, Mapping, Optional
 
 # A provider asking callers to wait longer than a day, or reporting a reset
-# more than a day away, is not describing a rate-limit window; such values
+# more than a day away, is not describing a rate-limit window. Such values
 # are treated as unknown.
 MAX_RETRY_AFTER_SECONDS = 86400.0
 
@@ -23,8 +23,8 @@ MAX_RETRY_AFTER_SECONDS = 86400.0
 # strings longer than 4,300 characters.
 MAX_COUNT_DIGITS = 18
 
-# ASCII digits only: \d and str.isdigit() also accept characters such as "²"
-# that float() and int() then reject.
+# ASCII digits only, because \d and str.isdigit() also accept characters such
+# as "²" that float() and int() then reject.
 _COUNT = re.compile(r"[0-9]{1,%d}" % MAX_COUNT_DIGITS)
 _NUMBER = r"[0-9]+(?:\.[0-9]+)?"
 # Duration text in the provider's format: "6m0s", "1.5s", "20ms", "1h2m3s".
@@ -70,7 +70,7 @@ def _lowercased(headers: Any) -> Optional[Dict[str, str]]:
 
 
 def _bounded_seconds(seconds: float) -> Optional[float]:
-    """A finite wait of at most a day, or None (float() of a long digit string is inf)."""
+    """A finite wait of at most a day, or None. float() of a long digit string is inf."""
     if not math.isfinite(seconds) or seconds < 0 or seconds > MAX_RETRY_AFTER_SECONDS:
         return None
     return seconds
@@ -79,8 +79,8 @@ def _bounded_seconds(seconds: float) -> Optional[float]:
 def parse_duration(text: Any) -> Optional[float]:
     """Seconds in a duration such as "6m0s" or "20ms".
 
-    None when the text does not parse or is not a rate-limit window (not
-    finite, or more than a day).
+    None when the text does not parse or is not a rate-limit window, which
+    means it is not finite or is more than a day.
     """
     if not isinstance(text, str) or not text:
         return None

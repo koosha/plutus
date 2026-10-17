@@ -1,7 +1,7 @@
 """The orchestrator reports a typed failure category and the model evidence.
 
 `error_type` stays the coarse compatibility code ("llm_error" or
-"llm_not_configured") that hosts already branch on; the category, retry
+"llm_not_configured") that hosts already branch on. The category, retry
 hints and charged usage are added beside it in the result metadata.
 """
 

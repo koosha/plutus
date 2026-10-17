@@ -1,9 +1,9 @@
 """
-Agent Mixins - Common Functionality
-===================================
+Agent mixins for shared functionality
+=====================================
 
-This module provides reusable mixins for common agent functionality
-to reduce code duplication and ensure consistency.
+This module holds reusable mixins for functionality many agents share, to
+reduce duplicated code and keep the agents consistent.
 """
 
 import re
@@ -134,7 +134,7 @@ class ResponseFormattingMixin:
         confidence: float,
         agent_type: str
     ) -> str:
-        """Create a well-structured response with consistent formatting."""
+        """Create a structured response with consistent formatting."""
         
         response_parts = []
         
@@ -152,8 +152,8 @@ class ResponseFormattingMixin:
                 else:
                     response_parts.append(f"- {key.replace('_', ' ').title()}: {value}")
         
-        # Recommendations — agents emit either plain strings or
-        # {title, description} dicts; render both.
+        # Recommendations. Agents emit either plain strings or
+        # {title, description} dicts, and both are rendered.
         if recommendations:
             response_parts.append("\n## Recommendations")
             for i, rec in enumerate(recommendations[:5], 1):  # Limit to top 5

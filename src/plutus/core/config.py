@@ -1,29 +1,28 @@
 """
-Plutus Configuration Management
-==============================
+Plutus configuration management
+===============================
 
-Centralized configuration for the Plutus AI system including API keys,
-model settings, database connections, and operational parameters.
+Centralized configuration for the Plutus AI system, including API keys,
+model settings, database connections and operational parameters.
 
 Every setting here is applied by code somewhere in this package. That is a
-rule, not a description: a config field that names a control nobody enforces
+rule, not a description. A config field that names a control nobody enforces
 is worse than no field at all, because it reads like a guarantee. Several
-fields were removed for exactly that reason — see the "Deliberately absent"
-note below — and anything added back has to come with the code that honours
-it.
+fields were removed for that reason, and the "Deliberately absent" note below
+lists them. Anything added back has to come with the code that honours it.
 
 Deliberately absent
 -------------------
-- ``daily_cost_limit`` — Plutus has no meter, no store and no notion of a
+- ``daily_cost_limit``: Plutus has no meter, no store and no notion of a
   user beyond an id string, so it could never enforce a budget. Cost control
-  belongs to the host application, which has all three; in Wealthify that is
+  belongs to the host application, which has all three. In Wealthify that is
   ``services/plutus_integration/budget.py``.
-- ``enable_pii_scrubbing`` / ``encrypt_sensitive_data`` — no scrubbing or
+- ``enable_pii_scrubbing`` / ``encrypt_sensitive_data``: no scrubbing or
   encryption exists in this package. Both read as security guarantees and
-  neither was one. Data minimisation and consent are enforced by the host
-  when it builds the context it passes in.
+  neither was one. The host enforces data minimisation and consent when it
+  builds the context it passes in.
 - ``enable_agent_caching``, ``enable_metrics``, ``enable_tracing``,
-  ``max_conversation_length``, ``memory_database_path`` — declared, never
+  ``max_conversation_length``, ``memory_database_path``: declared but never
   read.
 """
 
@@ -75,8 +74,8 @@ def _from_env(env_name, name, current):
         value = _LIMITS[name][0](raw)
         return validate_limit(name, value)
     except (ValueError, OverflowError):
-        # Malformed environment overrides retain a previously validated safe
-        # default. Never log raw environment values (they may be secrets).
+        # A malformed environment override keeps the previously validated
+        # safe default. Never log raw environment values; they may be secrets.
         logger.warning("Ignoring invalid operational setting %s", env_name)
         return current
 
@@ -86,43 +85,44 @@ def _from_env(env_name, name, current):
 @dataclass
 class PlutusConfig:
     """
-    Central configuration for Plutus system
+    Central configuration for the Plutus system
     """
     
-    # LLM Provider Configuration (the plutus.llm package is the only caller).
-    # The API key is only ever read from the environment — never hardcoded.
+    # LLM provider configuration. The plutus.llm package is the only caller.
+    # The API key is only ever read from the environment, never hardcoded.
     openai_api_key: Optional[str] = None
     model: str = "gpt-5-mini"
     max_output_tokens: int = 1024
-    # None = "use the provider's default"; omitted from requests entirely
-    # (the current reasoning-model family rejects non-default temperatures).
+    # None means "use the provider's default" and is left out of requests,
+    # because the current reasoning-model family rejects non-default
+    # temperatures.
     llm_temperature: Optional[float] = None
-    # Per-attempt timeout and retry budget handed to the provider SDK
-    # (plutus.llm.OpenAIProvider) by the orchestrator.
+    # The orchestrator hands this per-attempt timeout and retry budget to the
+    # provider SDK (plutus.llm.OpenAIProvider).
     request_timeout: float = 30.0
     max_retries: int = 3
 
-    # Database Configuration
+    # Database configuration
     database_url: Optional[str] = None
     redis_url: Optional[str] = None
 
-    # Memory Management
+    # Memory management
     context_ttl_seconds: int = 3600
 
-    # Agent Configuration — applied in AdvancedOrchestrator: a semaphore
+    # Agent configuration, applied in AdvancedOrchestrator. A semaphore
     # bounds fan-out, and each specialist run is wrapped in a deadline.
     max_parallel_agents: int = 5
     agent_timeout_seconds: float = 30.0
 
-    # Monitoring & Observability
+    # Monitoring and observability
     enable_logging: bool = True
     log_level: str = "INFO"
 
-    # Integration Settings
+    # Integration settings
     integration_mode: bool = True  # True when running inside Wealthify
     standalone_mode: bool = False  # True when running as standalone service
 
-    # Test Data Paths (for standalone testing)
+    # Test data paths for standalone testing
     sample_users_path: str = "data/sample_users.json"
     sample_questions_path: str = "data/sample_questions.json"
 
@@ -168,12 +168,12 @@ class PlutusConfig:
     def validate(self):
         """Log configuration warnings.
 
-        Never raises: a missing key or sample-data file downgrades behavior
-        (callers decide how), it must not make `import plutus` explode.
+        Never raises. A missing key or sample-data file downgrades behavior,
+        and callers decide how. It must not make `import plutus` fail.
         """
 
-        # Sample data files are only relevant in standalone mode, and even
-        # there they are optional — data_service handles their absence.
+        # Sample data files matter only in standalone mode, and even there
+        # they are optional, because data_service handles their absence.
         if self.standalone_mode:
             project_root = Path(__file__).parent.parent.parent.parent
             for rel_path in (self.sample_users_path, self.sample_questions_path):
@@ -182,7 +182,7 @@ class PlutusConfig:
                     logger.warning("Sample data file not found: %s", abs_path)
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert config to dictionary (never includes the API key)."""
+        """Convert config to a dictionary that never includes the API key."""
         return {
             "model": self.model,
             "max_output_tokens": self.max_output_tokens,

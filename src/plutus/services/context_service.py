@@ -1,9 +1,9 @@
 """
-Plutus Context Service
-=====================
+Plutus context service
+======================
 
-Manages user context building, caching, and updates.
-Integrates with the memory system and provides rich context for agents.
+Builds, caches and updates user context. It works with the memory system and
+gives agents detailed context.
 """
 
 import asyncio
@@ -22,9 +22,9 @@ logger = logging.getLogger(__name__)
 class ContextService:
     """
     Service for managing user context and conversation state
-    
+
     Responsibilities:
-    - Build comprehensive user context from multiple sources
+    - Build user context from multiple sources
     - Cache context for performance
     - Update context based on conversations
     - Provide context-aware insights
@@ -38,8 +38,8 @@ class ContextService:
     
     async def get_user_context(self, user_id: str, force_refresh: bool = False) -> UserContext:
         """
-        Get comprehensive user context with caching
-        
+        Get the user context, using the cache when it is fresh
+
         Args:
             user_id: The user identifier
             force_refresh: Whether to bypass cache and rebuild context
@@ -48,7 +48,7 @@ class ContextService:
             UserContext object with all available user information
         """
         
-        # Check cache first (unless force refresh)
+        # Check the cache first, unless force_refresh is set
         if not force_refresh and self._is_context_cached_and_fresh(user_id):
             logger.debug(f"Returning cached context for user {user_id}")
             return self._context_cache[user_id]
@@ -85,7 +85,7 @@ class ContextService:
         # Get base context from data service
         context = await self.data_service.build_user_context(user_id)
         
-        # Enhance with conversation insights
+        # Add conversation insights
         context = await self._enhance_with_conversation_insights(context)
         
         # Add real-time analysis
@@ -95,8 +95,8 @@ class ContextService:
     
     async def _enhance_with_conversation_insights(self, context: UserContext) -> UserContext:
         """
-        Enhance context with insights from previous conversations
-        
+        Add insights from previous conversations to the context
+
         In production, this would query the conversation database
         """
         

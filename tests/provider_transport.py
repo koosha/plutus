@@ -1,7 +1,7 @@
 """Drive the real model-provider SDK over an in-memory transport.
 
 The SDK's own status mapping, retries, raw-response access and parsing run
-unchanged; only the network is replaced. No request leaves the process.
+unchanged. Only the network is replaced, and no request leaves the process.
 """
 
 import importlib
@@ -16,7 +16,7 @@ TEST_KEY = "synthetic-test-key-not-real"
 
 
 def sdk_http():
-    """The HTTP library the installed SDK is built on (it changed in 3.x)."""
+    """The HTTP library the installed SDK is built on, which changed in 3.x."""
     major = int(openai.__version__.split(".")[0])
     return importlib.import_module("httpx2" if major >= 3 else "httpx")
 

@@ -3,15 +3,15 @@
 Every error exposes two class-level facts a host can act on:
 
 - ``category``: a stable string for metrics, user-facing states and runbooks.
-- ``retryable``: True only for temporary provider conditions (rate limiting,
-  unavailability, timeouts), where an identical request may succeed later
-  without operator or configuration changes. Output failures (empty,
-  truncated, filtered, malformed) are not retryable: an identical request is
-  likely to fail the same way and is charged again.
+- ``retryable``: True only for rate limiting, unavailability and timeouts.
+  These are temporary provider conditions, where an identical request may
+  succeed later without operator or configuration changes. Output failures
+  (empty, truncated, filtered, malformed) are not retryable, because an
+  identical request is likely to fail the same way and is charged again.
 
 Messages are fixed text. Provider error bodies can echo request details, so
-they are never copied into these errors; the original SDK exception stays
-available as ``__cause__`` for local debugging only.
+they are never copied into these errors. The original SDK exception stays
+available as ``__cause__``, for local debugging only.
 """
 
 from typing import TYPE_CHECKING, Optional
@@ -29,7 +29,7 @@ class LLMError(Exception):
 
 
 class LLMNotConfiguredError(LLMError):
-    """No API key (or no SDK) — the provider cannot make real calls."""
+    """No API key or no SDK, so the provider cannot make real calls."""
 
     category = "not_configured"
 
@@ -50,8 +50,8 @@ class LLMResponseError(LLMError):
     Attributes:
         retry_after: seconds the provider asked callers to wait, when stated.
         rate_limit: the provider's rate-limit headers on the failed response.
-        completion: usage of a charged but unusable completion (text removed),
-            so the host can settle what was actually spent.
+        completion: usage of a charged but unusable completion, with the text
+            removed, so the host can settle what was actually spent.
         status_code: the HTTP status of a refused request, when there was one.
     """
 
@@ -110,7 +110,7 @@ class LLMModelNotFoundError(LLMResponseError):
 
 
 class LLMInvalidRequestError(LLMResponseError):
-    """The provider rejected the request itself (for example a parameter)."""
+    """The provider rejected the request itself, for example a parameter."""
 
     category = "invalid_request"
 

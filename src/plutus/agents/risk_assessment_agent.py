@@ -1,12 +1,12 @@
 """
-Risk Assessment Agent - Phase 3 Advanced Agent
-==============================================
+Risk assessment agent, a Phase 3 advanced agent
+===============================================
 
-This agent specializes in analyzing financial risk across multiple dimensions
-including investment risk, income stability, debt burden, and overall financial
-vulnerability. It provides comprehensive risk analysis and mitigation strategies.
+This agent analyzes financial risk in several areas, including investment
+risk, income stability, debt burden and overall financial vulnerability. It
+gives risk analysis and mitigation strategies.
 
-Key Capabilities:
+Capabilities:
 1. Assess investment portfolio risk and diversification
 2. Analyze income stability and employment risk
 3. Evaluate debt-to-income ratios and debt risk
@@ -29,16 +29,16 @@ from ..core.config import get_config
 
 logger = logging.getLogger(__name__)
 
-# Debt above this APR (as a fraction: 0.20 is 20%) counts as high-interest.
+# Debt above this APR counts as high-interest. It is a fraction: 0.20 is 20%.
 HIGH_INTEREST_APR = 0.20
 
 
 class RiskAssessmentAgent(BaseAgent):
     """
-    Advanced agent for comprehensive financial risk assessment.
-    
-    This agent evaluates multiple risk factors and provides actionable
-    strategies for risk management and mitigation.
+    Agent that assesses financial risk.
+
+    It evaluates several risk factors and gives actionable strategies to
+    manage and reduce risk.
     """
     
     def __init__(self):
@@ -106,7 +106,7 @@ class RiskAssessmentAgent(BaseAgent):
     
     async def _process_core_logic(self, state: ConversationState) -> Dict[str, Any]:
         """
-        Perform comprehensive risk assessment of user's financial situation.
+        Assess the risk in the user's financial situation.
         
         Args:
             state: Current conversation state
@@ -124,7 +124,7 @@ class RiskAssessmentAgent(BaseAgent):
             # 1. Analyze if user is asking about risk
             risk_inquiry = await self._analyze_risk_inquiry(user_message)
             
-            # 2. Perform comprehensive risk assessment
+            # 2. Assess risk in every category
             risk_assessment = await self._perform_comprehensive_risk_assessment(user_context)
             
             # 3. Calculate overall risk score
@@ -228,23 +228,23 @@ class RiskAssessmentAgent(BaseAgent):
         }
     
     async def _perform_comprehensive_risk_assessment(self, user_context: Dict) -> Dict[str, Any]:
-        """Perform comprehensive risk assessment across all categories"""
+        """Assess risk in every category"""
         
         assessment = {}
         
-        # 1. Investment Risk Assessment
+        # 1. Investment risk assessment
         assessment["investment_risk"] = await self._assess_investment_risk(user_context)
         
-        # 2. Income Risk Assessment
+        # 2. Income risk assessment
         assessment["income_risk"] = await self._assess_income_risk(user_context)
         
-        # 3. Debt Risk Assessment
+        # 3. Debt risk assessment
         assessment["debt_risk"] = await self._assess_debt_risk(user_context)
         
-        # 4. Liquidity Risk Assessment
+        # 4. Liquidity risk assessment
         assessment["liquidity_risk"] = await self._assess_liquidity_risk(user_context)
         
-        # 5. Insurance Risk Assessment
+        # 5. Insurance risk assessment
         assessment["insurance_risk"] = await self._assess_insurance_risk(user_context)
         
         return assessment
@@ -375,8 +375,8 @@ class RiskAssessmentAgent(BaseAgent):
         
         for debt in debt_accounts:
             balance = abs(debt.get("balance", 0))
-            # Every liability rate is known here (checked above).
-            if account_apr(debt) > HIGH_INTEREST_APR:  # High interest debt (credit cards)
+            # Every liability rate is known here; the code above checked it.
+            if account_apr(debt) > HIGH_INTEREST_APR:  # High-interest debt like credit cards
                 high_interest_debt += balance
                 # Assume minimum payment of 2% of balance
                 estimated_monthly_payments += balance * 0.02

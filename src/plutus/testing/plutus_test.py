@@ -1,19 +1,19 @@
 """
-Plutus Testing Framework
+Plutus testing framework
 ========================
 
-Exercises the Plutus system against sample users and questions in standalone
-mode, scoring answers on whether they are CORRECT.
+Runs the Plutus system against sample users and questions in standalone
+mode, and scores answers on whether they are correct.
 
 The scorer this file used to carry added points for a long answer, for a
-matching complexity label, and for the model's own reported confidence —
-three things a fluent hallucination maximizes. `_evaluate_response_quality`
-now gates on grounding and scope instead (see `plutus.testing.quality`).
+matching complexity label, and for the model's own reported confidence. A
+fluent hallucination maximizes all three. `_evaluate_response_quality` now
+gates on grounding and scope instead (see `plutus.testing.quality`).
 
-This is a development tool: it needs the sample-data files that only exist
-in standalone mode. It is not a release gate. An integrating application
+This is a development tool. It needs the sample-data files that only exist
+in standalone mode, and it is not a release gate. An integrating application
 should run its own offline evaluations against its own data, because only it
-knows what "grounded" means for its users — Wealthify's live under
+knows what "grounded" means for its users. Wealthify's live under
 `python-backend/tests/plutus_evals/`.
 """
 
@@ -47,7 +47,7 @@ class PlutusTestFramework:
     
     async def run_comprehensive_test(self) -> Dict[str, Any]:
         """
-        Run comprehensive test suite
+        Run the full test suite
         """
         
         logger.info("🚀 Starting Plutus Comprehensive Test")
@@ -187,16 +187,17 @@ class PlutusTestFramework:
         This scorer used to add points for a long answer, for a matching
         complexity label, and for the model's own reported confidence. All
         three are maximized by a fluent, confidently wrong answer, which is
-        the failure mode that matters for financial advice — so none of them
-        are here now.
+        the failure mode that matters for financial advice. None of them are
+        here now.
 
-        Scoring is a gate, not a weighted sum: 1.0 only when the answer
-        succeeded, every currency figure in it traces back to the user's own
-        records, and it stayed inside the educational scope. Otherwise 0.0.
+        Scoring is a gate, not a weighted sum. The score is 1.0 only when the
+        answer succeeded, every currency figure in it traces back to the
+        user's own records, and it stayed inside the educational scope.
+        Otherwise it is 0.0.
 
         A weighted sum would be worse here, because partial credit is how a
-        hallucination scores 0.5 — "at least it finished and it was long"
-        should not soften an invented account balance.
+        hallucination scores 0.5. Credit for "at least it finished and it was
+        long" should not soften an invented account balance.
         """
 
         response_text = response.get("response", "") or ""
@@ -221,7 +222,7 @@ class PlutusTestFramework:
         """The sample user behind an id, or None when it cannot be resolved.
 
         Without it the scorer has no fact set, so an unresolvable user makes
-        every answer look ungrounded — the caller is told, not guessed at.
+        every answer look ungrounded. The caller is told; nothing is guessed.
         """
         try:
             users = await self.data_service.get_all_users()

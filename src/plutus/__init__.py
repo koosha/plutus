@@ -1,11 +1,11 @@
 """
-Plutus - AI-Powered Wealth Management Brain for Wealthify
-========================================================
+Plutus, AI wealth management for Wealthify
+=========================================
 
-Plutus is a multi-agent system that provides personalized financial
-guidance and insights through a pluggable LLM provider.
+Plutus is a multi-agent system that gives personalized financial guidance
+and insights through a pluggable LLM provider.
 
-Core Components:
+Components:
 - Multi-agent conversation system with real LLM synthesis
 - Pluggable LLM provider layer (plutus.llm)
 - User context management
@@ -28,7 +28,7 @@ from .llm import (
 from .models.state import ConversationState
 from .services.context_service import ContextService
 
-# Main orchestrator class - use AdvancedOrchestrator as default
+# The main orchestrator class. AdvancedOrchestrator is the default.
 PlutusOrchestrator = AdvancedOrchestrator
 
 __all__ = [

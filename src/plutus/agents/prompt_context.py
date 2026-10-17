@@ -82,8 +82,8 @@ def compose_prompt(message, context, findings, output_tokens):
                             'reserved_output_tokens': output_tokens},
     }
     prompt = _json(payload)
-    # Independent section ceilings reserve envelope/metadata space. A final
-    # check fails explicitly if that invariant changes in future edits.
+    # The section ceilings are set independently and leave room for the
+    # envelope and metadata. This final check raises if a later edit breaks that.
     if len(prompt.encode('utf-8')) > MAX_PROMPT_BYTES:
         raise ValueError('Structured prompt exceeded its input budget')
     return prompt

@@ -1,9 +1,9 @@
 """
-Plutus Base Agent
-================
+Plutus base agent
+=================
 
-Base class for all Plutus agents providing common functionality including
-error handling, monitoring, LLM provider access, and result formatting.
+Base class for all Plutus agents. It provides error handling, monitoring,
+LLM provider access and result formatting.
 """
 
 import time
@@ -23,7 +23,8 @@ class BaseAgent(ABC):
     Base class for all Plutus agents
 
     Provides:
-    - LLM provider access (injected; None = agent runs deterministically)
+    - LLM provider access; the provider is injected, and with None the
+      agent runs deterministically
     - Error handling and retries
     - Performance monitoring
     - Standardized result formatting
@@ -48,9 +49,9 @@ class BaseAgent(ABC):
     
     async def process(self, state: ConversationState) -> Dict[str, Any]:
         """
-        Main execution method for the agent
-        
-        Handles error handling, monitoring, and result formatting
+        Main execution method for the agent.
+
+        It handles errors, monitoring and result formatting.
         """
         
         started = time.monotonic()
@@ -86,9 +87,9 @@ class BaseAgent(ABC):
     @abstractmethod
     async def _process_core_logic(self, state: ConversationState) -> Dict[str, Any]:
         """
-        Abstract method for agent-specific logic
-        
-        Must be implemented by each agent subclass
+        Abstract method for agent-specific logic.
+
+        Each agent subclass must implement it.
         """
         pass
     
@@ -98,9 +99,9 @@ class BaseAgent(ABC):
                        max_output_tokens: Optional[int] = None) -> LLMCompletion:
         """One real LLM completion through the injected provider.
 
-        There is deliberately NO simulation fallback here: an agent that
-        needs generation either has a configured provider or surfaces the
-        typed error to its caller.
+        There is no simulation fallback here, by design. An agent that needs
+        generation either has a configured provider or passes the typed error
+        to its caller.
 
         Raises:
             LLMNotConfiguredError: no provider was injected.
@@ -124,7 +125,7 @@ class BaseAgent(ABC):
 
     def parse_json_response(self, content: str) -> Optional[Dict[str, Any]]:
         """
-        Parse a JSON object out of an LLM response with error handling
+        Parse a JSON object out of an LLM response, or return None
         """
         
         try:

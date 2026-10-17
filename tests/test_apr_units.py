@@ -3,7 +3,7 @@
 The recommendation specialist used to compare rates as percentages (> 15)
 while the risk specialist compared them as fractions (> 0.20), so the same
 account was high-interest to one and not the other. Each specialist keeps
-its own threshold (15% and 20% APR); only the unit is unified.
+its own threshold, 15% and 20% APR. Only the unit is unified.
 """
 
 import math

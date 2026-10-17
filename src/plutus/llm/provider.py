@@ -1,21 +1,22 @@
 """LLM provider abstraction and the production implementation.
 
-Design contract (kept deliberately small):
+The design contract is kept small on purpose:
 
-- `LLMProvider.complete(messages, ...)` is the ONLY seam the rest of Plutus
-  talks to. Tests inject a fake provider; production uses `OpenAIProvider`.
+- `LLMProvider.complete(messages, ...)` is the only seam the rest of Plutus
+  talks to. Tests inject a fake provider, and production uses `OpenAIProvider`.
 - No API key ever appears in code. `OpenAIProvider` reads `OPENAI_API_KEY`
-  from the environment (or an explicitly-injected key) and raises the typed
-  `LLMNotConfiguredError` when absent so callers can degrade gracefully.
-- Model comes from `PLUTUS_MODEL` (default: gpt-5-mini). Only models with a
-  reviewed price (see `plutus.llm.pricing`) are dispatched; any other name is
-  refused before a request is sent.
-- Temperature is only sent when explicitly configured: the gpt-5 reasoning
-  family rejects non-default temperatures, so the safe default is "omit".
+  from the environment, or takes an explicitly injected key. Without a key it
+  raises the typed `LLMNotConfiguredError`, so callers can degrade gracefully.
+- The model comes from `PLUTUS_MODEL`, and the default is gpt-5-mini. Only
+  models with a reviewed price in `plutus.llm.pricing` are dispatched. Any
+  other name is refused before a request is sent.
+- Temperature is sent only when explicitly configured, because the gpt-5
+  reasoning family rejects non-default temperatures. The safe default is to
+  omit it.
 - Every failure is a typed `LLMResponseError` subclass with a stable
-  `category` and `retryable` flag (see `plutus.llm.errors`). A completion cut
-  off at the output limit, filtered, or without text is a failure, never a
-  partial success.
+  `category` and `retryable` flag, defined in `plutus.llm.errors`. A
+  completion cut off at the output limit, filtered, or without text is a
+  failure, never a partial success.
 """
 
 import dataclasses
@@ -107,15 +108,15 @@ class LLMProvider(ABC):
         Args:
             messages: [{"role": "user"|"assistant", "content": str}, ...]
             system: optional system prompt, prepended by the implementation.
-            max_output_tokens: response-token cap (implementation default
-                applies when None).
+            max_output_tokens: response-token cap; the implementation
+                default applies when None.
             temperature: sampling temperature; None means "provider default"
                 and MUST be omitted from the upstream request.
 
         Raises:
             LLMNotConfiguredError: provider has no credentials or no priced model.
-            LLMResponseError: upstream call failed or response unusable; the
-                subclass names the category (see plutus.llm.errors).
+            LLMResponseError: upstream call failed or response unusable. The
+                subclass, from plutus.llm.errors, names the category.
         """
 
 
@@ -187,7 +188,7 @@ class OpenAIProvider(LLMProvider):
 
     @staticmethod
     def is_configured() -> bool:
-        """True when a real call could be attempted (key present, SDK importable)."""
+        """True when a real call could be attempted: a key exists and the SDK imports."""
         if not os.getenv("OPENAI_API_KEY"):
             return False
         try:

@@ -1,10 +1,10 @@
 # Plutus
 
-Plutus provides financial analysis and educational response synthesis for Wealthify. The host supplies authorized financial context and owns authentication, consent, persistence, and spending controls. Domain specialists organize findings before an injected asynchronous provider produces a response.
+Plutus analyses finances and writes educational responses for Wealthify. The host supplies authorized financial context and owns authentication, consent, persistence, and spending controls. Domain specialists organize findings before an injected asynchronous provider produces a response.
 
 ## Install
 
-Plutus supports Python 3.10 or newer, in minimal mode and in the optional graph mode. Python 3.9 support ended in 1.2.0 (see the [changelog](CHANGELOG.md)). Use the exact reviewed repository revision or a wheel built from that revision:
+Plutus supports Python 3.10 or newer, in minimal mode and in the optional graph mode. Python 3.9 support ended in 1.2.0, as the [changelog](CHANGELOG.md) records. Use the exact reviewed repository revision or a wheel built from that revision:
 
 ```bash
 git clone https://github.com/koosha/plutus.git
@@ -20,7 +20,7 @@ uv run --no-sync pytest -q
 uv build --wheel
 ```
 
-The optional graph installation is tested separately with `uv sync --locked --extra dev --extra langgraph`. Both supported installations must execute the same selected analyses. A missing optional dependency must not change financial conclusions. See [graph dependency security and compatibility](docs/graph-dependencies.md) for the patched minimum versions and evaluation boundary.
+The optional graph installation is tested separately with `uv sync --locked --extra dev --extra langgraph`. Both supported installations must run the same selected analyses. A missing optional dependency must not change financial conclusions. See [graph dependency security and compatibility](docs/graph-dependencies.md) for the patched minimum versions and the evaluation boundary.
 
 ## Use
 
@@ -35,11 +35,11 @@ result = await orchestrator.process_message(
 )
 ```
 
-`provider` implements `plutus.llm.LLMProvider`. Production may configure `OPENAI_API_KEY` and `PLUTUS_MODEL`; no credentials are needed to import the package or run the tests. A missing provider produces a typed unavailable result. This library does not start a web server or load sample financial data at runtime.
+`provider` implements `plutus.llm.LLMProvider`. Production may configure `OPENAI_API_KEY` and `PLUTUS_MODEL`. Importing the package or running the tests needs no credentials. A missing provider produces a typed unavailable result. This library does not start a web server or load sample financial data at runtime.
 
 The host owns configuration loading. Plutus reads explicit process environment
-variables and constructor settings; importing it never discovers or loads a
-repository-local `.env` file. Applications that previously relied on that implicit
+variables and constructor settings. Importing it never discovers or loads a
+repository-local `.env` file. Applications that relied on that implicit
 behavior must load their chosen configuration before importing or constructing
 Plutus. The package no longer depends on `python-dotenv`.
 
@@ -49,13 +49,13 @@ Run the complete offline example after installation:
 python examples/offline_chat.py
 ```
 
-CI also runs this example in an isolated wheel environment outside the source checkout, ensuring that source-path injection cannot hide packaging omissions. The public `plutus.PlutusOrchestrator` and historical `plutus.agents.orchestrator.PlutusOrchestrator` imports remain supported.
+CI also runs this example in an isolated wheel environment outside the source checkout, so source-path injection cannot hide files missing from the package. The public `plutus.PlutusOrchestrator` and historical `plutus.agents.orchestrator.PlutusOrchestrator` imports remain supported.
 
 ## Models and pricing
 
-`OpenAIProvider` sends one Chat Completions request per answer through the model provider's official async SDK. It dispatches only models with a reviewed price: a listed family name, alone or with a dated snapshot suffix (`-YYYY-MM-DD`, for example `gpt-5.6-terra-2026-10-01`). For any other name `maximum_cost()` returns `None`, so a host can refuse before reserving spend, and `complete()` raises `LLMModelNotPricedError` before a request is sent.
+`OpenAIProvider` sends one Chat Completions request per answer through the model provider's official async SDK. It sends requests only for models with a reviewed price, which means a listed family name, alone or with a dated snapshot suffix (`-YYYY-MM-DD`, for example `gpt-5.6-terra-2026-10-01`). For any other name `maximum_cost()` returns `None`, so a host can refuse before reserving spend, and `complete()` raises `LLMModelNotPricedError` before a request is sent.
 
-Standard text prices on the provider's global endpoint, USD per million tokens, checked on 2026-10-04 (`plutus.llm.pricing.PRICING_VERSION` names this table):
+`plutus.llm.pricing.PRICING_VERSION` names the table below. It lists standard text prices on the provider's global endpoint, in USD per million tokens, checked on 2026-10-04:
 
 | Model | Input | Cache writes | Output | Cached input (not modelled) |
 | --- | --- | --- | --- | --- |
@@ -68,18 +68,18 @@ Standard text prices on the provider's global endpoint, USD per million tokens, 
 | `gpt-6-luna` | 0.10 | 0.125 | 0.50 | 0.01 |
 | `gpt-6-sol` | 2.00 | 2.50 | 10.00 | 0.20 |
 
-The `gpt-5.6-sol` rate is a promotional price. On 2026-10-05 the provider said it is available at least through 2026-11-21 and published no price for after that. A higher later price would make the reservation and the settled cost of a `gpt-5.6-sol` request understate spend, so re-check the rate, and bump `PRICING_VERSION` if it changed, before qualifying `gpt-5.6-sol` or keeping it in use after 2026-11-21.
+The `gpt-5.6-sol` rate is a promotional price. On 2026-10-05 the provider said it is available at least through 2026-11-21 and published no price for after that. A higher later price would make the reservation and the settled cost of a `gpt-5.6-sol` request understate spend. Re-check the rate before qualifying `gpt-5.6-sol` or keeping it in use after 2026-11-21, and bump `PRICING_VERSION` if it changed.
 
-Prompt caching is on by default. The 5.6 and 6 families bill input written to the cache at 1.25x the uncached input rate, and caching writes a prompt up to its latest message, so most input of a large prompt is billed at that rate; the gpt-5 family has no cache-write charge. Plutus charges every input token at the highest rate the provider can bill for it: the cache-write rate where the family has one, otherwise the uncached rate. On the global endpoint `maximum_cost()` is therefore a true ceiling for the host's reservation, and a settled cost is an upper bound of the bill. The bill is lower when input is served from the cache, or on the 5.6 and 6 families is not written to it; those discounts are not modelled. Two published surcharges are not modelled either:
+Prompt caching is on by default. The 5.6 and 6 families bill input written to the cache at 1.25x the uncached input rate. Caching writes a prompt up to its latest message, so most input of a large prompt is billed at that rate. The gpt-5 family has no cache-write charge. Plutus charges every input token at the highest rate the provider can bill for it. That is the cache-write rate where the family has one, and otherwise the uncached rate. On the global endpoint `maximum_cost()` is therefore a true ceiling for the host's reservation, and a settled cost is an upper bound of the bill. The bill is lower when input is served from the cache or, on the 5.6 and 6 families, when input is not written to it. Those discounts are not modelled. Two published surcharges are not modelled either:
 
-- Prompts above 272K input tokens on the 5.6 and 6 families cost 2x input and 1.5x output for the whole request. This cannot apply to a request Plutus composes: its user prompt (`MAX_PROMPT_BYTES`) and system prompt (`MAX_SYSTEM_PROMPT_BYTES`) are at most about 32K tokens together, far below that threshold.
-- Regional processing (data residency) and FedRAMP endpoints charge 10% more for models released on or after 2026-03-05. `OpenAIProvider` builds its SDK client without a base URL, so the SDK's `OPENAI_BASE_URL` environment variable chooses the endpoint. On such an endpoint the bill can exceed `maximum_cost()` and a settled cost by up to 10%.
+- Prompts above 272K input tokens on the 5.6 and 6 families cost 2x input and 1.5x output for the whole request. This cannot apply to a request Plutus composes. Its user prompt (`MAX_PROMPT_BYTES`) and system prompt (`MAX_SYSTEM_PROMPT_BYTES`) are at most about 32K tokens together, far below that threshold.
+- Regional processing endpoints for data residency, and FedRAMP endpoints, charge 10% more for models released on or after 2026-03-05. `OpenAIProvider` builds its SDK client without a base URL, so the SDK's `OPENAI_BASE_URL` environment variable chooses the endpoint. On such an endpoint the bill can exceed `maximum_cost()` and a settled cost by up to 10%.
 
-The provider's model pages, checked on 2026-10-05, list Chat Completions support for all five newer families and publish no dated snapshots for them yet. Whether each model accepts the request parameters (`max_completion_tokens`, temperature omitted by default) and produces usable output within the output budget is not established by these tests; that needs a live qualification run.
+The provider's model pages, checked on 2026-10-05, list Chat Completions support for all five newer families and publish no dated snapshots for them yet. These tests do not establish whether each model accepts the request parameters (`max_completion_tokens`, with temperature omitted by default) and produces usable output within the output budget. That needs a live qualification run.
 
 ## Provider errors
 
-Every provider failure is a subclass of `LLMResponseError`, so existing `except LLMResponseError` and `except LLMError` clauses still catch it. Each exposes a stable `category` and a `retryable` flag:
+Every provider failure is a subclass of `LLMResponseError`, so existing `except LLMResponseError` and `except LLMError` clauses still catch it. Each one has a stable `category` and a `retryable` flag:
 
 | Category | Error class | Retryable | Meaning |
 | --- | --- | --- | --- |
@@ -96,7 +96,7 @@ Every provider failure is a subclass of `LLMResponseError`, so existing `except 
 | `malformed_completion` | `LLMMalformedCompletionError` | no | Text that does not satisfy the requested output contract |
 | `provider_error` | `LLMResponseError` | no | Any other failure |
 
-`LLMNotConfiguredError` (`not_configured`) and its subclass `LLMModelNotPricedError` (`model_not_priced`) mean no request could be made. Retryable means only that an identical request may succeed later without operator action; output failures are not retryable because a repeat is likely to fail the same way and is charged again. A truncated, empty or filtered completion is never returned as a partial success. Its error carries the paid usage in `error.completion` (text removed) so the host can settle the actual cost. Error messages are fixed text; provider error bodies are not copied into them.
+`LLMNotConfiguredError` (`not_configured`) and its subclass `LLMModelNotPricedError` (`model_not_priced`) mean no request could be made. Retryable means only that an identical request may succeed later without operator action. Output failures are not retryable, because a repeat is likely to fail the same way and is charged again. A truncated, empty or filtered completion is never returned as a partial success. Its error carries the paid usage, with the text removed, in `error.completion`, so the host can settle the actual cost. Error messages are fixed text. Provider error bodies are never copied into them.
 
 ## Host-supplied system prompt
 
@@ -111,9 +111,9 @@ orchestrator = PlutusOrchestrator(
 )
 ```
 
-With no arguments the package default `ADVISOR_SYSTEM_PROMPT` is used unchanged, under version `package-default`. Without `brief_system_prompt`, the brief prompt is derived from the chat prompt: the output contract section starts at the one line that begins with `Output contract` and runs to the end of the prompt, and the brief keeps everything before that line followed by the package's brief card contract. Put every rule before that section; the phrase inside a line, as in "follow the Output contract below", is part of a rule and is kept. A host chat prompt with no line, or more than one line, that begins with `Output contract` needs its own `brief_system_prompt`: with none the brief would carry the chat output contract beside the card contract, and with several the cut point is ambiguous and could drop rules. A host prompt requires its own version id (1-64 letters, digits, `.`, `_`, `:` or `-`, never `package-default`), and a version id other than `package-default` requires a host prompt, so answers cannot be attributed to the wrong prompt. Each prompt sent is at most 8,192 UTF-8 bytes, which together with the 24,000-byte user prompt keeps a request's input below 32,768 tokens. Invalid prompt settings raise `ValueError` when the orchestrator is constructed. Plutus never puts prompt text in its results, its own log records or its error messages.
+With no arguments the package default `ADVISOR_SYSTEM_PROMPT` is used unchanged, under version `package-default`. Without `brief_system_prompt`, the brief prompt is derived from the chat prompt. The output contract section starts at the one line that begins with `Output contract` and runs to the end of the prompt. The brief keeps everything before that line, followed by the package's brief card contract. Put every rule before that section. The phrase inside a line, as in "follow the Output contract below", is part of a rule and is kept. A host chat prompt with no line, or more than one line, that begins with `Output contract` needs its own `brief_system_prompt`. With no such line the brief would carry the chat output contract beside the card contract. With several, the cut point is ambiguous and could drop rules. A host prompt requires its own version id of 1-64 letters, digits, `.`, `_`, `:` or `-`, never `package-default`. A version id other than `package-default` requires a host prompt, so answers cannot be attributed to the wrong prompt. Each prompt sent is at most 8,192 UTF-8 bytes. Together with the 24,000-byte user prompt, that keeps a request's input below 32,768 tokens. Invalid prompt settings raise `ValueError` when the orchestrator is constructed. Plutus never puts prompt text in its results, its own log records or its error messages.
 
-The model provider's SDK is outside that guarantee. SDK 2.48.0, the release Wealthify pins, logs every request's options at DEBUG on the `openai._base_client` logger, including the system prompt and the user prompt with its financial context; SDK 3.11.0 logs only the method and status. That logger reaches DEBUG when `OPENAI_LOG=debug` is set or when the `openai` or root logger is set to DEBUG. Keep it above DEBUG wherever real financial data flows. Plutus does not change logging levels itself; the host owns logging configuration.
+The model provider's SDK is outside that guarantee. SDK 2.48.0, the release Wealthify pins, logs every request's options at DEBUG on the `openai._base_client` logger. Those options include the system prompt and the user prompt with its financial context. SDK 3.11.0 logs only the method and status. That logger reaches DEBUG when `OPENAI_LOG=debug` is set or when the `openai` or root logger is set to DEBUG. Keep it above DEBUG wherever real financial data flows. Plutus does not change logging levels itself. The host owns logging configuration.
 
 ## Result metadata
 
@@ -121,28 +121,28 @@ Every result from `process_message` records `metadata["prompt_version"]`. When a
 
 - `model`: the model the provider reports having served, and `requested_model`: the name that was asked for (`None` when the provider does not say);
 - `input_tokens`, `output_tokens`, `api_cost`, `cost_status` and `pricing_version`;
-- `rate_limit`: the provider's `limit`, `remaining` and `reset` values for requests and tokens (`limit_requests`, `remaining_requests`, `reset_requests_seconds`, `limit_tokens`, `remaining_tokens`, `reset_tokens_seconds`), read from the same response, or `None` when not reported. A header that is absent, does not parse, or is out of range (a count longer than 18 digits, a reset more than a day away) is `None`, never zero; a malformed header never turns a completion or a typed error into a different failure.
+- `rate_limit`: the provider's `limit`, `remaining` and `reset` values for requests and tokens (`limit_requests`, `remaining_requests`, `reset_requests_seconds`, `limit_tokens`, `remaining_tokens`, `reset_tokens_seconds`), read from the same response, or `None` when not reported. A header that is absent, does not parse, or is out of range is `None`, never zero. Out of range means a count longer than 18 digits or a reset more than a day away. A malformed header never turns a completion or a typed error into a different failure.
 
 On failure, `error_type` keeps its existing values (`llm_error`, `llm_not_configured`, `orchestration_error`). Provider-layer failures add `metadata["error_category"]` and `metadata["retryable"]`, plus `metadata["retry_after_seconds"]` when the provider stated a wait.
 
-Where to read rate-limit headers depends on whether a completion arrived. A refused request (for example 429 or 5xx) returns no completion and is not charged, so it has no `metadata["llm"]`; its headers are reported at the top level as `metadata["rate_limit"]`, with the same fields. `metadata["llm"]["rate_limit"]` therefore always belongs to a received completion, and `metadata["rate_limit"]` to a refusal. A cooldown that reacts to refusals reads `metadata["rate_limit"]` and `metadata["retry_after_seconds"]`.
+Where to read rate-limit headers depends on whether a completion arrived. A refused request, for example a 429 or 5xx, returns no completion and is not charged, so it has no `metadata["llm"]`. Its headers are reported at the top level as `metadata["rate_limit"]`, with the same fields. `metadata["llm"]["rate_limit"]` therefore always belongs to a received completion, and `metadata["rate_limit"]` to a refusal. A cooldown that reacts to refusals reads `metadata["rate_limit"]` and `metadata["retry_after_seconds"]`.
 
 ## Financial inputs
 
-Account `interest_rate` values may be percentages (24.99) or fractions (0.2499). A context may state the scale with `interest_rate_unit` (`percent` or `fraction`); without it, a value greater than 1 is read as a percentage. Missing, negative or unrecognised rates are unknown and are not treated as zero. Every specialist reads rates through `plutus.agents.boundaries.apr_fraction`.
+Account `interest_rate` values may be percentages, such as 24.99, or fractions, such as 0.2499. A context may state the scale with `interest_rate_unit`, set to `percent` or `fraction`. Without it, a value greater than 1 is read as a percentage. Missing, negative or unrecognised rates are unknown and are not treated as zero. Every specialist reads rates through `plutus.agents.boundaries.apr_fraction`.
 
 ## Verification boundaries
 
-Unit and integration tests use injected providers and synthetic data. They verify contracts and failure handling without paid model calls. Provider tests drive the real SDK client over an in-memory transport; CI runs them on the locked SDK 3.11.0 and, in the `host-sdk` job, on SDK 2.48.0, the release Wealthify pins. Other SDK releases allowed by the dependency range are not tested (see [SDK coverage](docs/graph-dependencies.md#sdk-coverage)). They do not establish live-model answer quality, production availability, or suitability of financial advice. Host integration and opt-in provider evaluations must record their actual modes and model versions.
+Unit and integration tests use injected providers and synthetic data. They verify contracts and failure handling without paid model calls. Provider tests drive the real SDK client over an in-memory transport. CI runs them on the locked SDK 3.11.0 and, in the `host-sdk` job, on SDK 2.48.0, the release Wealthify pins. Other SDK releases allowed by the dependency range are not tested. See [SDK coverage](docs/graph-dependencies.md#sdk-coverage). The tests do not establish live-model answer quality, production availability, or suitability of financial advice. Host integration and opt-in provider evaluations must record their actual modes and model versions.
 
 Conversation history belongs to the host. The historical standalone SQLite memory service is not part of the supported runtime. Project changes use `plutus/` branches and the repository owner's commit identity.
 
 
 ## Compatibility and storage
 
-The public orchestrator imports remain supported. The unused internal SQLite
-`services.memory_service` and unused prompt/validation mixins were retired in
-1.1.0. Their default construction was already broken and they had no active
-package consumer. Integrations must persist conversations in their host and
-pass bounded `conversation_history` with the current authorization provenance.
-No database file is created by importing or constructing Plutus.
+The public orchestrator imports remain supported. Release 1.1.0 retired the
+unused internal SQLite `services.memory_service` and the unused prompt and
+validation mixins. Their default construction was already broken and no
+package code used them. Integrations must persist conversations in their host
+and pass bounded `conversation_history` with the current authorization
+provenance. Importing or constructing Plutus creates no database file.

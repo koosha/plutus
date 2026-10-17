@@ -1,4 +1,4 @@
-"""Real orchestration path with a mocked provider — no network anywhere.
+"""Real orchestration path with a mocked provider and no network anywhere.
 
 Covers: structured output from mocked completions, the guardrail system
 prompt, typed llm_not_configured / llm_error paths, and non-contract

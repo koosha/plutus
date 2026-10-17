@@ -1,18 +1,18 @@
 """Correctness checks for scoring Plutus answers.
 
-Scoped to the testing package on purpose. These are the checks a *scorer*
-needs; they are not the runtime safety gate. An integrating application must
-implement its own enforcement rather than importing this, for two reasons:
-it has to keep working when this package fails to import, and a host that
-trusts the vendored package to police the vendored package's output has not
-actually added a control. Wealthify's equivalent lives in
+These checks live in the testing package on purpose. They are the checks a
+scorer needs, not the runtime safety gate. An integrating application must
+implement its own enforcement rather than importing this, for two reasons.
+It has to keep working when this package fails to import. And a host that
+trusts the vendored package to check the vendored package's output has not
+added a control. Wealthify's equivalent lives in
 `services/plutus_integration/{grounding,safety}.py`.
 
-Both checks are deliberately narrow. Only currency amounts are validated —
-percentages, counts and dates are prose. Only two scope violations are
-detected — an echoed instruction override, and an action verb aimed at a
-ticker-shaped token. Broad checks produce false alarms, and a scorer nobody
-believes is a scorer nobody reads.
+Both checks are narrow on purpose. Only currency amounts are validated;
+percentages, counts and dates are treated as prose. Only two scope violations
+are detected: an echoed instruction override, and an action verb aimed at a
+ticker-shaped token. Broad checks produce false alarms, and people stop
+reading a scorer that raises them.
 """
 
 import re
@@ -49,9 +49,10 @@ _NOT_A_TICKER = frozenset(
 def numeric_leaves(node) -> set:
     """Every number anywhere inside a nested user record.
 
-    Deliberately generous about shape: sample users and integration contexts
-    nest amounts differently, and a fact set that under-collects produces
-    false hallucination reports — which is how a scorer stops being read.
+    Generous about shape on purpose. Sample users and integration contexts
+    nest amounts differently, and a fact set that collects too little
+    produces false hallucination reports. False reports are how a scorer
+    stops being read.
     """
     found = {0.0}
     stack = [node]
@@ -86,9 +87,9 @@ def currency_amounts(text: str) -> List[float]:
 def ungrounded_amounts(text: str, allowed: Iterable[float]) -> List[float]:
     """Dollar figures no value in `allowed` supports.
 
-    Tolerant by design: within 1% (or $1) counts, and so does the value
-    rounded to a coarser unit, because "about $42,000" for a computed
-    41,987.13 is good writing rather than invention.
+    Tolerant by design. A claim within 1%, or within $1, counts, and so does
+    the value rounded to a coarser unit, because "about $42,000" for a
+    computed 41,987.13 is good writing rather than invention.
     """
     allowed = list(allowed)
     unsupported: List[float] = []

@@ -1,14 +1,14 @@
 """
-Goal Extraction Agent - Phase 3 Advanced Agent
-==============================================
+Goal extraction agent, a Phase 3 advanced agent
+===============================================
 
-This agent specializes in extracting, analyzing, and updating financial goals
-from user conversations. It can identify new goals, update existing ones,
-and track progress towards goal completion.
+This agent extracts, analyzes and updates financial goals from user
+conversations. It can identify new goals, update existing ones, and track
+progress towards goal completion.
 
-Key Capabilities:
+Capabilities:
 1. Extract goals from natural language conversations
-2. Categorize goals by type (retirement, emergency fund, house, etc.)
+2. Categorize goals by type, such as retirement, emergency fund or house
 3. Identify target amounts, deadlines, and priority levels
 4. Update existing goals based on user input
 5. Track goal progress and suggest adjustments
@@ -30,10 +30,10 @@ logger = logging.getLogger(__name__)
 
 class GoalExtractionAgent(BaseAgent, TextParsingMixin, ResponseFormattingMixin):
     """
-    Advanced agent for extracting and managing financial goals from conversations.
-    
-    This agent uses sophisticated NLP to understand user intent around goals
-    and maintains a comprehensive goal management system.
+    Agent that extracts and manages financial goals from conversations.
+
+    It uses NLP to understand user intent around goals and maintains a goal
+    management system.
     """
     
     def __init__(self):

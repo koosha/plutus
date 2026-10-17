@@ -22,7 +22,7 @@ def failure(code='agent_error'):
 
 
 def number(value):
-    """Return a finite measurement, preserving missing/invalid values as unknown."""
+    """Return a finite measurement, or None for a missing or invalid value."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     try:

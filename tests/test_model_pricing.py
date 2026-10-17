@@ -8,11 +8,12 @@ published on 2026-10-04 (input / output, USD):
     gpt-6-luna 0.10 / 0.50     gpt-6-sol 2.00 / 10.00
 
 The 5.6 and 6 families also bill input written to the prompt cache, which is
-on by default, at 1.25x the uncached input rate (published cache-write
-prices: gpt-5.6-luna 0.25, gpt-5.6-terra 2.50, gpt-5.6-sol 5.00, gpt-6-luna
-0.125, gpt-6-sol 2.50). The gpt-5 family has no cache-write charge. A price
-that must never under-state spend therefore charges each input token at the
-highest rate it can be billed: the cache-write rate where one exists.
+on by default, at 1.25x the uncached input rate. The published cache-write
+prices are gpt-5.6-luna 0.25, gpt-5.6-terra 2.50, gpt-5.6-sol 5.00,
+gpt-6-luna 0.125 and gpt-6-sol 2.50. The gpt-5 family has no cache-write
+charge. A price that must never under-state spend therefore charges each
+input token at the highest rate it can be billed, which is the cache-write
+rate where one exists.
 
 They are written out as literals so a wrong table entry cannot also produce
 the expected value.
@@ -28,7 +29,8 @@ MILLION = 1_000_000
 
 # (model, highest price of one million input tokens, price of one million
 # output tokens). The input price is the cache-write price where the family
-# has one (1.25x its 0.20 / 2.00 / 4.00 / 0.10 / 2.00 uncached input price).
+# has one, which is 1.25x its 0.20 / 2.00 / 4.00 / 0.10 / 2.00 uncached input
+# price.
 PUBLISHED = [
     ("gpt-5", 1.25, 10.00),
     ("gpt-5-mini", 0.25, 2.00),
@@ -129,7 +131,7 @@ class TestReservationAndRefusal:
 
         The provider reports 1,024 of 2,048 input tokens read from the cache
         and 1,024 written to it. The bill for that split is 1,024 x $0.01/M +
-        1,024 x $0.125/M + 4 x $0.50/M = 0.00014024; the settled cost is
+        1,024 x $0.125/M + 4 x $0.50/M = 0.00014024. The settled cost is
         2,048 x $0.125/M + 4 x $0.50/M = 0.000258, an upper bound.
         """
         provider = provider_over(RecordingHandler(body=chat_body(

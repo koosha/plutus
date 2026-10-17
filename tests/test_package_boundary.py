@@ -1,5 +1,5 @@
 """Package-boundary contract: importing plutus never requires sample data,
-a .env file, or an LLM key — and the public surface actually resolves."""
+a .env file, or an LLM key, and the public names resolve."""
 
 from datetime import datetime
 

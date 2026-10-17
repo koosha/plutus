@@ -16,39 +16,40 @@ endpoint, checked on 2026-10-04, in USD per million tokens (input / output):
 The gpt-5.6-sol rate is a promotional price. On 2026-10-05 the provider said
 it is available at least through 2026-11-21 and published no price for after
 that. A higher later price would make the reservation and the settled cost of
-a gpt-5.6-sol request understate spend, so re-check the rate, and bump
-PRICING_VERSION if it changed, before qualifying gpt-5.6-sol or keeping it in
-use after 2026-11-21.
+a gpt-5.6-sol request understate spend. Re-check the rate before qualifying
+gpt-5.6-sol or keeping it in use after 2026-11-21, and bump PRICING_VERSION if
+it changed.
 
 The 5.6 and 6 families also bill input written to the prompt cache at 1.25x
-the uncached input rate (cache writes: gpt-5.6-luna 0.25, gpt-5.6-terra 2.50,
-gpt-5.6-sol 5.00, gpt-6-luna 0.125, gpt-6-sol 2.50). Prompt caching is on by
-default and writes the prompt up to its latest message, so on these families
-most input of a large prompt is billed at that rate. The gpt-5 family has no
-cache-write charge.
+the uncached input rate. Their cache-write prices are gpt-5.6-luna 0.25,
+gpt-5.6-terra 2.50, gpt-5.6-sol 5.00, gpt-6-luna 0.125 and gpt-6-sol 2.50.
+Prompt caching is on by default and writes the prompt up to its latest
+message, so on these families most input of a large prompt is billed at that
+rate. The gpt-5 family has no cache-write charge.
 
 Each input token is charged here at the highest rate the provider can bill
-for it: the cache-write rate where the family has one, otherwise the uncached
-rate. On the global endpoint `maximum_cost()` is therefore a true ceiling for
-a request Plutus composes, and a settled cost is an upper bound of the bill.
+for it. That is the cache-write rate where the family has one, and otherwise
+the uncached rate. On the global endpoint `maximum_cost()` is therefore a true
+ceiling for a request Plutus composes, and a settled cost is an upper bound of
+the bill.
 Three published rules are deliberately not modelled:
 
-- Cached input is billed below the input rate (gpt-5-mini 0.025,
+- Cached input is billed below the input rate: gpt-5-mini 0.025,
   gpt-5.6-luna 0.02, gpt-6-luna 0.01, gpt-5.6-terra 0.20, gpt-5.6-sol 0.40,
-  gpt-6-sol 0.20). This lowers the bill. Settling from the provider's cached
+  gpt-6-sol 0.20. This lowers the bill. Settling from the provider's cached
   and written token counts would be cheaper but depends on how those counts
   overlap, so it is left out rather than risk under-stating spend.
 - Prompts above 272K input tokens on the 5.6 and 6 families cost 2x input and
   1.5x output for the whole request. This surcharge raises the bill, but it
-  cannot apply to a request Plutus composes: its user prompt is at most
+  cannot apply to a request Plutus composes. Its user prompt is at most
   MAX_PROMPT_BYTES and its system prompt at most MAX_SYSTEM_PROMPT_BYTES,
   about 32K tokens together, far below that threshold.
-- Regional processing (data residency) and FedRAMP endpoints charge 10% more
-  for models released on or after 2026-03-05. This surcharge also raises the
-  bill and is not covered: the provider class builds its SDK client without a
-  base URL, so the SDK's `OPENAI_BASE_URL` environment variable chooses the
-  endpoint, and on such an endpoint the bill can exceed `maximum_cost()` and
-  a settled cost by up to 10%.
+- Regional processing endpoints for data residency, and FedRAMP endpoints,
+  charge 10% more for models released on or after 2026-03-05. This surcharge
+  also raises the bill and is not covered. The provider class builds its SDK
+  client without a base URL, so the SDK's `OPENAI_BASE_URL` environment
+  variable chooses the endpoint. On such an endpoint the bill can exceed
+  `maximum_cost()` and a settled cost by up to 10%.
 """
 
 import re
@@ -70,7 +71,8 @@ MODEL_COST_RATES: Dict[str, Tuple[float, float]] = {
 }
 
 # USD per single input token written to the prompt cache, for the families
-# that charge for cache writes (published as 1.25x the uncached input rate).
+# that charge for cache writes. The provider publishes them as 1.25x the
+# uncached input rate.
 CACHE_WRITE_RATES: Dict[str, float] = {
     "gpt-5.6-luna": 0.25e-6,
     "gpt-5.6-terra": 2.50e-6,

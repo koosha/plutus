@@ -20,7 +20,7 @@ MAX_SYSTEM_PROMPT_BYTES = 8192
 
 _VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,63}")
 
-# Educational-scope guardrails + output contract for the synthesis call.
+# Educational-scope guardrails and the output contract for the synthesis call.
 # Every real completion goes through this system prompt unless the host
 # supplies its own.
 ADVISOR_SYSTEM_PROMPT = """You are Plutus, the AI financial guide inside the Wealthify app.
@@ -57,9 +57,9 @@ def brief_prompt_from(chat_prompt: str) -> str:
 
     The cut is made at the only line that starts with "Output contract". The
     phrase inside a line belongs to a rule and is kept. With no such line the
-    brief would carry the chat contract beside the card contract; with more
+    brief would carry the chat contract beside the card contract. With more
     than one, the cut point is ambiguous and could drop the rules between
-    them. Either raises ValueError, without quoting the prompt.
+    them. Either case raises ValueError, without quoting the prompt.
     """
     starts = [match.start() for match in _SECTION_START.finditer(chat_prompt)]
     if not starts:
@@ -111,8 +111,8 @@ def resolve_prompts(
     than the package default must come with a host prompt, so results can
     never attribute one prompt's answers to another. A brief prompt is
     derived only from a chat prompt with exactly one line that starts its
-    output contract section (see brief_prompt_from); otherwise the host
-    supplies brief_system_prompt. Prompt text is never included in an
+    output contract section, as brief_prompt_from describes. Otherwise the
+    host supplies brief_system_prompt. Prompt text is never included in an
     error message.
     """
     supplied = system_prompt is not None or brief_system_prompt is not None

@@ -1,13 +1,13 @@
 """Configured operational limits are applied, not just declared.
 
-The review finding these answer is narrow and unglamorous: PlutusConfig
-named a request timeout, a retry budget, an agent timeout, a parallelism cap
-and a daily cost limit, and the code applied none of them. A config field
-that names a control nobody enforces reads like a guarantee, which makes it
-worse than no field.
+These tests answer a narrow review finding. PlutusConfig named a request
+timeout, a retry budget, an agent timeout, a parallelism cap and a daily cost
+limit, and the code applied none of them. A config field that names a
+control nobody enforces reads like a guarantee, which makes it worse than no
+field.
 
-So: the surviving fields are tested for enforcement, and the removed ones
-are tested for absence — otherwise the next person re-adds a comforting
+The surviving fields are therefore tested for enforcement, and the removed
+ones for absence. Otherwise the next person re-adds a comforting
 `enable_pii_scrubbing: bool = True` and nothing catches it.
 """
 
@@ -20,8 +20,8 @@ from plutus.core.config import PlutusConfig, get_config, set_config
 
 
 # Fields deleted because nothing in this package enforced them. Cost control
-# belongs to the host (it has the meter and the user identity); scrubbing and
-# encryption never existed here at all.
+# belongs to the host, which has the meter and the user identity. Scrubbing
+# and encryption never existed here at all.
 REMOVED_FIELDS = (
     "daily_cost_limit",
     "enable_pii_scrubbing",
@@ -69,7 +69,7 @@ class TestConfigSurface:
         assert "openai_api_key" not in published
 
     def test_from_dict_round_trips_through_to_dict(self):
-        """to_dict exposes a computed field; from_dict must not choke on it."""
+        """to_dict exposes a computed field, and from_dict must accept it."""
         original = PlutusConfig(request_timeout=12.0, max_retries=1)
         restored = PlutusConfig.from_dict(original.to_dict())
         assert restored.request_timeout == 12.0
@@ -186,7 +186,7 @@ class TestOrchestratorAppliesLimits:
         ):
             _instrument(agent)
 
-        # "what should I do" routes to the comprehensive four-agent path.
+        # "what should I do" routes to the four-agent comprehensive_analysis path.
         await orchestrator.process_message("what should I do", "user-1")
 
         assert peak == 1, f"cap of 1 was exceeded (peak {peak})"
@@ -194,7 +194,7 @@ class TestOrchestratorAppliesLimits:
     def test_the_provider_receives_the_configured_timeout_and_retries(
         self, restore_config, monkeypatch
     ):
-        """The default provider must be built FROM the config, not defaults."""
+        """The default provider must be built from the config, not from defaults."""
         import plutus.agents.advanced_orchestrator as module
 
         set_config(PlutusConfig(request_timeout=7.0, max_retries=1))

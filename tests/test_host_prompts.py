@@ -128,7 +128,7 @@ class TestHostPrompt:
         """With the real SDK client, Plutus's own records stay prompt-free.
 
         The SDK's and HTTP library's own DEBUG records are outside this
-        guarantee (SDK 2.x logs whole request options); the README says so.
+        guarantee. SDK 2.x logs whole request options, and the README says so.
         """
         from provider_transport import RecordingHandler, provider_over
 

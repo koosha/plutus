@@ -1,8 +1,8 @@
 """Map model-provider SDK exceptions onto the typed error hierarchy.
 
 Classification uses the HTTP status and the provider's error code, which are
-stable across SDK major versions; exception classes are used only for the
-two failures that have no status (timeouts and connection errors).
+stable across SDK major versions. Exception classes are used only for the two
+failures that have no status, timeouts and connection errors.
 """
 
 from typing import Any, Type
